@@ -1,17 +1,109 @@
 ---
+import Base from '../layouts/Base.astro';
+import Gallery from '../components/Gallery.astro';
+import YouTube from '../components/YouTube.astro';
+import videos from '../data/videos.json';
 
+// Placeholder name and intro; edit freely.
+const name = 'in4m';
+const intro = 'A small collection of photographs and films.';
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Base title={`${name} — photos & videos`} description={intro}>
+	<header class="top">
+		<a class="name" href="#top">{name}</a>
+		<nav>
+			<a href="#photos">Photos</a>
+			<a href="#videos">Videos</a>
+		</nav>
+	</header>
+
+	<main id="top">
+		<section class="intro">
+			<h1>{name}</h1>
+			<p>{intro}</p>
+		</section>
+
+		<section id="photos">
+			<h2>Photos</h2>
+			<Gallery />
+		</section>
+
+		<section id="videos">
+			<h2>Videos</h2>
+			<div class="videos">
+				{videos.map((v) => <YouTube id={v.id} title={v.title} />)}
+			</div>
+		</section>
+	</main>
+
+	<footer>© {new Date().getFullYear()} {name}</footer>
+</Base>
+
+<style>
+	.top {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		padding: 1.25rem var(--gutter);
+	}
+	.name {
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		text-decoration: none;
+	}
+	nav {
+		display: flex;
+		gap: 1.5rem;
+		font-size: 0.95rem;
+	}
+	nav a {
+		color: var(--muted);
+		text-decoration: none;
+	}
+	nav a:hover {
+		color: var(--fg);
+	}
+	main {
+		padding: 0 var(--gutter);
+	}
+	.intro {
+		padding: clamp(3rem, 10vw, 7rem) 0 clamp(2.5rem, 6vw, 4rem);
+		max-width: 40rem;
+	}
+	h1 {
+		margin: 0 0 0.5rem;
+		font-size: clamp(2.5rem, 7vw, 4.5rem);
+		font-weight: 600;
+		letter-spacing: -0.03em;
+		line-height: 1.05;
+	}
+	.intro p {
+		margin: 0;
+		font-size: 1.15rem;
+		color: var(--muted);
+	}
+	section + section {
+		margin-top: clamp(3rem, 8vw, 6rem);
+	}
+	h2 {
+		margin: 0 0 1.25rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.85rem;
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.videos {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+		gap: 1.5rem;
+	}
+	footer {
+		padding: 4rem var(--gutter) 2rem;
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+</style>
