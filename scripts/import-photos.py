@@ -2,7 +2,7 @@
 """Convert photos from a source folder into src/assets/photos.
 
 Usage:
-    .venv/bin/python scripts/import-photos.py [SOURCE_DIR] [--prune] [--size 2500]
+    uv run scripts/import-photos.py [SOURCE_DIR] [--prune] [--size 2500]
 
 Reads JPG/PNG/HEIC/DNG, applies EXIF rotation, resizes to --size on the long edge and
 writes `YYYY-MM-DD_<original-name>.jpg`, so the gallery (sorted by filename) runs in date
@@ -10,7 +10,7 @@ order. Photos that were already converted are skipped; --prune removes outputs w
 source is no longer in SOURCE_DIR.
 
 One-time setup:
-    python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt
+    uv sync
 """
 import argparse
 import datetime as dt
@@ -25,7 +25,7 @@ try:
 except ImportError:
     sys.exit(
         "Missing packages. Run:\n"
-        "  python3 -m venv .venv && .venv/bin/pip install -r scripts/requirements.txt"
+        "  uv sync"
     )
 
 DEFAULT_SOURCE = "/run/user/1000/gvfs/smb-share:server=100.98.230.125,share=photo/website"

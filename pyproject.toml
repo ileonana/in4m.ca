@@ -1,0 +1,10 @@
+[project]
+name = "website-scripts"
+version = "0.1.0"
+description = "Python helper scripts for the website (photo import)"
+requires-python = ">=3.14"
+dependencies = [
+    "pillow",
+    "pillow-heif",
+    "rawpy",
+]
