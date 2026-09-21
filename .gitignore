@@ -25,3 +25,6 @@ pnpm-debug.log*
 
 # editor settings
 .vscode/
+
+# python venv for scripts/
+.venv/
