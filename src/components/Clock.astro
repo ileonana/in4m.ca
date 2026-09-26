@@ -223,8 +223,8 @@ for (let i = -1; i < DAYS; i++) {
 		q(holiday, 'unit').textContent = days === 0 ? '' : days === 1 ? 'day' : 'days';
 		q(holiday, 'holiday').textContent = h.name;
 		q(holiday, 'holiday-date').textContent = f('UTC', 'hd', {
-			weekday: 'long',
-			month: 'long',
+			weekday: 'short',
+			month: 'short',
 			day: 'numeric',
 		}).format(h.date);
 	}
