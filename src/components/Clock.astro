@@ -1,0 +1,204 @@
+---
+---
+
+<section class="tile clock" id="clock" aria-label="Time, date and next holiday">
+	<div class="cell" data-zone="America/Toronto">
+		<div class="label">Toronto <span data-role="abbr"></span></div>
+		<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
+		<div class="date" data-role="date"></div>
+	</div>
+
+	<div class="cell" data-zone="Asia/Shanghai">
+		<div class="label">China <span>CST</span></div>
+		<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
+		<div class="date" data-role="date"></div>
+		<div class="lunar" data-role="lunar"></div>
+	</div>
+
+	<div class="cell holiday">
+		<div class="label">Next holiday · Ontario</div>
+		<div class="days"><span data-role="days">–</span><small data-role="unit">days</small></div>
+		<div class="date" data-role="holiday"></div>
+		<div class="lunar" data-role="holiday-date"></div>
+	</div>
+</section>
+
+<script>
+	const fmt = (zone: string, opts: Intl.DateTimeFormatOptions, locale = 'en-CA') =>
+		new Intl.DateTimeFormat(locale, { timeZone: zone, ...opts });
+
+	const cache = new Map<string, Intl.DateTimeFormat>();
+	function f(zone: string, key: string, opts: Intl.DateTimeFormatOptions, locale?: string) {
+		const k = `${zone}|${key}|${locale ?? ''}`;
+		if (!cache.has(k)) cache.set(k, fmt(zone, opts, locale));
+		return cache.get(k)!;
+	}
+
+	// --- Ontario statutory holidays -------------------------------------------------
+	type Holiday = { name: string; date: Date }; // date is UTC midnight of the calendar day
+
+	const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+
+	// nth (1-based) weekday (0 = Sun) of a month
+	function nthWeekday(y: number, m: number, weekday: number, n: number) {
+		const first = utc(y, m, 1).getUTCDay();
+		return utc(y, m, 1 + ((weekday - first + 7) % 7) + (n - 1) * 7);
+	}
+
+	// Monday on or before May 24
+	function victoriaDay(y: number) {
+		const d = utc(y, 5, 24);
+		return utc(y, 5, 24 - ((d.getUTCDay() + 6) % 7));
+	}
+
+	// Anonymous Gregorian algorithm
+	function easter(y: number) {
+		const a = y % 19,
+			b = Math.floor(y / 100),
+			c = y % 100,
+			d = Math.floor(b / 4),
+			e = b % 4,
+			g = Math.floor((b - Math.floor((b + 8) / 25) + 1) / 3),
+			h = (19 * a + b - d - g + 15) % 30,
+			i = Math.floor(c / 4),
+			k = c % 4,
+			l = (32 + 2 * e + 2 * i - h - k) % 7,
+			m = Math.floor((a + 11 * h + 22 * l) / 451),
+			month = Math.floor((h + l - 7 * m + 114) / 31),
+			day = ((h + l - 7 * m + 114) % 31) + 1;
+		return utc(y, month, day);
+	}
+
+	function holidays(y: number): Holiday[] {
+		const e = easter(y);
+		const goodFriday = new Date(e.getTime() - 2 * 86400000);
+		// Christmas/Boxing Day observance is left as the calendar date.
+		return [
+			{ name: "New Year's Day", date: utc(y, 1, 1) },
+			{ name: 'Family Day', date: nthWeekday(y, 2, 1, 3) },
+			{ name: 'Good Friday', date: goodFriday },
+			{ name: 'Victoria Day', date: victoriaDay(y) },
+			{ name: 'Canada Day', date: utc(y, 7, 1) },
+			{ name: 'Labour Day', date: nthWeekday(y, 9, 1, 1) },
+			{ name: 'Thanksgiving', date: nthWeekday(y, 10, 1, 2) },
+			{ name: 'Christmas Day', date: utc(y, 12, 25) },
+			{ name: 'Boxing Day', date: utc(y, 12, 26) },
+		];
+	}
+
+	function nextHoliday(today: Date) {
+		const y = today.getUTCFullYear();
+		return [...holidays(y), ...holidays(y + 1)].find((h) => h.date >= today)!;
+	}
+
+	// --- Rendering ------------------------------------------------------------------
+	const root = document.getElementById('clock')!;
+	const q = (el: Element, role: string) => el.querySelector<HTMLElement>(`[data-role="${role}"]`)!;
+
+	function render() {
+		const now = new Date();
+
+		for (const cell of root.querySelectorAll<HTMLElement>('[data-zone]')) {
+			const zone = cell.dataset.zone!;
+			q(cell, 'time').textContent = f(zone, 'hm', {
+				hour: '2-digit',
+				minute: '2-digit',
+				hourCycle: 'h23',
+			}).format(now);
+			q(cell, 'sec').textContent = f(zone, 's', { second: '2-digit' }).format(now).padStart(2, '0');
+			q(cell, 'date').textContent = f(zone, 'date', {
+				weekday: 'short',
+				month: 'short',
+				day: 'numeric',
+				year: 'numeric',
+			}).format(now);
+
+			if (zone === 'America/Toronto') {
+				q(cell, 'abbr').textContent = f(zone, 'tz', { timeZoneName: 'short' })
+					.formatToParts(now)
+					.find((p) => p.type === 'timeZoneName')!.value;
+			} else {
+				const p = f(zone, 'lunar', { dateStyle: 'full' }, 'zh-CN-u-ca-chinese').formatToParts(now);
+				const get = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+				q(cell, 'lunar').textContent = `农历 ${get('yearName')}年 ${get('month')}${get('day')}`;
+			}
+		}
+
+		// Calendar day in Toronto -> days until the next holiday.
+		const [y, m, d] = f('America/Toronto', 'ymd', { year: 'numeric', month: '2-digit', day: '2-digit' })
+			.format(now)
+			.split('-')
+			.map(Number);
+		const today = utc(y, m, d);
+		const h = nextHoliday(today);
+		const days = Math.round((h.date.getTime() - today.getTime()) / 86400000);
+		const holiday = root.querySelector('.holiday')!;
+		q(holiday, 'days').textContent = days === 0 ? 'Today' : String(days);
+		q(holiday, 'unit').textContent = days === 0 ? '' : days === 1 ? 'day' : 'days';
+		q(holiday, 'holiday').textContent = h.name;
+		q(holiday, 'holiday-date').textContent = f('UTC', 'hd', {
+			weekday: 'long',
+			month: 'long',
+			day: 'numeric',
+		}).format(h.date);
+	}
+
+	render();
+	setInterval(render, 1000);
+</script>
+
+<style>
+	.tile {
+		background: var(--card);
+		border: 1px solid var(--line);
+		border-radius: 1.25rem;
+		padding: 1rem 1.5rem;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		gap: 1rem 2rem;
+	}
+	.cell + .cell {
+		border-left: 1px solid var(--line);
+		padding-left: 2rem;
+	}
+	@media (max-width: 42rem) {
+		.cell + .cell {
+			border-left: 0;
+			padding-left: 0;
+			border-top: 1px solid var(--line);
+			padding-top: 1rem;
+		}
+	}
+	.label {
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.label span {
+		color: var(--go);
+		font-weight: 600;
+	}
+	.time,
+	.days {
+		font-size: clamp(1.8rem, 4.5vw, 2.2rem);
+		font-weight: 650;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+		margin: 0.15rem 0;
+	}
+	small {
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--muted);
+		margin-left: 0.3rem;
+	}
+	.date {
+		font-size: 0.9rem;
+	}
+	.lunar {
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+</style>
