@@ -3,7 +3,7 @@ import { Solar } from 'lunar-javascript';
 
 // 黄历 宜/忌 for each day (China date), computed at build time so the client ships no library.
 // The weekly deploy keeps this window rolling forward.
-const DAYS = 120;
+const DAYS = 200; // longest gap between 诸事不宜 days is ~116
 const shanghai = new Intl.DateTimeFormat('en-CA', {
 	timeZone: 'Asia/Shanghai',
 	year: 'numeric',
@@ -32,8 +32,9 @@ for (let i = -1; i < DAYS; i++) {
 		<div class="date" data-role="date"></div>
 		<div class="lunar" data-role="lunar"></div>
 		<div class="almanac" data-role="almanac" hidden>
-			<div class="yi" title=""><b>宜</b><span data-role="yi"></span></div>
-			<div class="ji" title=""><b>忌</b><span data-role="ji"></span></div>
+			<div class="row yi"><b>宜</b><span data-role="yi"></span><button type="button" class="more" data-role="yi-more" hidden></button></div>
+			<div class="row ji"><b>忌</b><span data-role="ji"></span><button type="button" class="more" data-role="ji-more" hidden></button></div>
+			<div class="bad" data-role="bad"></div>
 		</div>
 		<script type="application/json" id="almanac-data" set:html={JSON.stringify(almanac)} />
 	</div>
@@ -118,17 +119,47 @@ for (let i = -1; i < DAYS; i++) {
 	const almanac: Record<string, { yi: string[]; ji: string[] }> = JSON.parse(
 		document.getElementById('almanac-data')!.textContent!,
 	);
-	const SHOWN = 6;
+	const SHOWN = 4;
+
+	// Days until the next 诸事不宜 (a day whose 忌 list is exactly that).
+	function renderNextBadDay(cell: HTMLElement, now: Date) {
+		const today = f('Asia/Shanghai', 'ymd', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+		const next = Object.keys(almanac)
+			.sort()
+			.find((k) => k >= today && almanac[k].ji.includes('诸事不宜'));
+		const el = q(cell, 'bad');
+		el.hidden = !next;
+		if (!next) return;
+		const ms = (k: string) => Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8));
+		const days = Math.round((ms(next) - ms(today)) / 86400000);
+		el.textContent =
+			days === 0 ? '今日诸事不宜' : `距下次诸事不宜 ${days} 天 · ${+next.slice(5, 7)}月${+next.slice(8)}日`;
+	}
 
 	function renderAlmanac(cell: HTMLElement, now: Date) {
 		const day = almanac[f('Asia/Shanghai', 'ymd', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)];
 		const box = q(cell, 'almanac');
 		box.hidden = !day;
 		if (!day) return;
+		renderNextBadDay(cell, now);
 		for (const [role, list] of [['yi', day.yi], ['ji', day.ji]] as const) {
 			const span = q(cell, role);
-			span.textContent = list.length ? list.slice(0, SHOWN).join(' ') + (list.length > SHOWN ? ' …' : '') : '诸事不宜';
-			span.parentElement!.title = list.join(' ');
+			const more = q(cell, `${role}-more`);
+			const row = span.parentElement!;
+			const open = row.dataset.open === '1';
+			if (!list.length) {
+				span.textContent = '诸事不宜';
+				more.hidden = true;
+				continue;
+			}
+			span.textContent = (open ? list : list.slice(0, SHOWN)).join(' ');
+			more.hidden = list.length <= SHOWN;
+			more.textContent = open ? '收起' : `+${list.length - SHOWN}`;
+			more.setAttribute('aria-expanded', String(open));
+			more.onclick = () => {
+				row.dataset.open = open ? '0' : '1';
+				renderAlmanac(cell, new Date());
+			};
 		}
 	}
 
@@ -249,6 +280,33 @@ for (let i = -1; i < DAYS; i++) {
 		line-height: 1.5;
 		display: grid;
 		gap: 0.1rem;
+	}
+	.row {
+		display: flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 0 0.1rem;
+	}
+	.bad {
+		margin-top: 0.2rem;
+		color: var(--muted);
+		font-size: 0.75rem;
+	}
+	.more {
+		font: inherit;
+		font-size: 0.7rem;
+		line-height: 1.4;
+		margin-left: 0.3rem;
+		padding: 0 0.4rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.more:hover {
+		color: var(--fg);
+		border-color: var(--muted);
 	}
 	.almanac b {
 		display: inline-block;
