@@ -99,6 +99,11 @@ const { title, description } = Astro.props;
 		backdrop-filter: blur(20px);
 		padding: 1.4rem 1.75rem;
 	}
+	@media (max-width: 42rem) {
+		.tile {
+			padding: 1.25rem;
+		}
+	}
 	.label {
 		font-size: 0.68rem;
 		font-weight: 500;

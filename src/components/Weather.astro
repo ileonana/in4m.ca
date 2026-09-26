@@ -19,6 +19,7 @@ const groups = [
 ---
 
 <section class="tile weather" id="weather" aria-label="Weather">
+	<div class="layout">
 	{
 		groups.map((g) => (
 			<div class="group">
@@ -43,6 +44,7 @@ const groups = [
 		))
 	}
 	<div class="foot" data-role="updated"></div>
+	</div>
 </section>
 
 <script>
@@ -135,13 +137,18 @@ const groups = [
 			const [day, night, label] = codes[w.current.weather_code] ?? ['cloud', 'cloud', '—'];
 			q(cell, 'icon').innerHTML = svg(w.current.is_day ? day : night);
 			q(cell, 'temp').textContent = deg(w.current.temperature_2m);
+			q(cell, 'cond').textContent = label;
 			const feels = Math.round(w.current.apparent_temperature);
-			q(cell, 'cond').textContent =
-				feels === Math.round(w.current.temperature_2m) ? label : `${label} · feels ${feels}°`;
 			const rain = w.daily.precipitation_probability_max[0];
-			q(cell, 'range').textContent =
-				`H ${deg(w.daily.temperature_2m_max[0])}  L ${deg(w.daily.temperature_2m_min[0])}` +
-				(rain != null ? `  ·  ${rain}% rain` : '');
+			// Each chunk is nowrap so narrow cells wrap between chunks, never inside one.
+			const chunks = [
+				feels !== Math.round(w.current.temperature_2m) ? `feels ${feels}°` : '',
+				`H ${deg(w.daily.temperature_2m_max[0])} L ${deg(w.daily.temperature_2m_min[0])}`,
+				rain != null ? `${rain}% rain` : '',
+			].filter(Boolean);
+			q(cell, 'range').replaceChildren(
+				...chunks.map((t) => Object.assign(document.createElement('span'), { textContent: t })),
+			);
 		});
 		const time = new Date(at).toLocaleTimeString('en-CA', {
 			timeZone: 'America/Toronto',
@@ -188,37 +195,42 @@ const groups = [
 
 <style>
 	.tile {
+		container-type: inline-size;
+	}
+	.layout {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.25rem 2.5rem;
-		padding-bottom: 1rem;
+	}
+	.group {
+		min-width: 0;
 	}
 	.group + .group {
-		border-left: 1px solid var(--line);
-		padding-left: 2.5rem;
+		border-top: 1px solid var(--line);
+		padding-top: 1.25rem;
 	}
 	.cells {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 1rem 1.75rem;
+	}
+	.cell {
+		min-width: 0;
 	}
 	.cell + .cell {
 		border-left: 1px solid var(--line);
 		padding-left: 1.75rem;
 	}
-	@media (max-width: 42rem) {
-		.tile {
-			grid-template-columns: 1fr;
-			padding: 1.25rem 1.25rem 0.9rem;
+	/* Layout follows the tile's own width, not the viewport: groups sit side by side only when there is room. */
+	@container (min-width: 58rem) {
+		.layout {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 		.group + .group {
-			border-left: 0;
-			padding-left: 0;
-			border-top: 1px solid var(--line);
-			padding-top: 1.25rem;
-		}
-		.cell + .cell {
-			padding-left: 1rem;
+			border-top: 0;
+			padding-top: 0;
+			border-left: 1px solid var(--line);
+			padding-left: 2.5rem;
 		}
 	}
 	.label span {
@@ -240,9 +252,14 @@ const groups = [
 		font-size: 0.85rem;
 	}
 	.range {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 0.7rem;
 		font-size: 0.75rem;
 		color: var(--muted);
-		white-space: pre;
+	}
+	.range :global(span) {
+		white-space: nowrap;
 	}
 	.foot {
 		grid-column: 1 / -1;

@@ -20,6 +20,7 @@ for (let i = -1; i < DAYS; i++) {
 ---
 
 <section class="tile clock" id="clock" aria-label="Time, date, holidays and almanac">
+	<div class="layout">
 	<div class="group">
 		<h2 class="group-title">North America</h2>
 		<div class="cells">
@@ -29,7 +30,7 @@ for (let i = -1; i < DAYS; i++) {
 				<div class="date" data-role="date"></div>
 			</div>
 			<div class="cell holiday">
-				<div class="label">Next holiday · Ontario</div>
+				<div class="label" title="Ontario statutory holidays">Next holiday</div>
 				<div class="days num"><span data-role="days">–</span><small data-role="unit">days</small></div>
 				<div class="date" data-role="holiday"></div>
 				<div class="lunar" data-role="holiday-date"></div>
@@ -55,6 +56,7 @@ for (let i = -1; i < DAYS; i++) {
 		</div>
 	</div>
 
+	</div>
 	<script type="application/json" id="almanac-data" set:html={JSON.stringify(almanac)} />
 </section>
 
@@ -233,44 +235,51 @@ for (let i = -1; i < DAYS; i++) {
 
 <style>
 	.tile {
+		container-type: inline-size;
+	}
+	.layout {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.25rem 2.5rem;
 	}
+	.group {
+		min-width: 0;
+	}
 	.group + .group {
-		border-left: 1px solid var(--line);
-		padding-left: 2.5rem;
+		border-top: 1px solid var(--line);
+		padding-top: 1.25rem;
 	}
 	.cells {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 1rem 1.75rem;
+	}
+	.cell {
+		min-width: 0;
 	}
 	.cell + .cell {
 		border-left: 1px solid var(--line);
 		padding-left: 1.75rem;
 	}
-	/* give the almanac more room than the clock so 宜/忌 and their toggle stay on one line */
-	.wide .cells {
-		grid-template-columns: 0.8fr 1.2fr;
-	}
-	@media (max-width: 42rem) {
-		.tile {
-			grid-template-columns: 1fr;
-			padding: 1.25rem;
+	/* Layout follows the tile's own width, not the viewport: groups sit side by side only when there is room. */
+	@container (min-width: 58rem) {
+		.layout {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 		.group + .group {
-			border-left: 0;
-			padding-left: 0;
-			border-top: 1px solid var(--line);
-			padding-top: 1.25rem;
+			border-top: 0;
+			padding-top: 0;
+			border-left: 1px solid var(--line);
+			padding-left: 2.5rem;
 		}
-		.cell + .cell {
-			padding-left: 1rem;
-		}
-		/* the almanac needs the width, so China's cells stack on phones */
+	}
+	/* give the almanac more room than the clock so 宜/忌 and their toggle stay together */
+	.wide .cells {
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+	}
+	@container (max-width: 34rem) {
 		.wide .cells {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.wide .cell + .cell {
 			border-left: 0;
@@ -291,6 +300,7 @@ for (let i = -1; i < DAYS; i++) {
 		color: var(--muted);
 	}
 	.almanac {
+		word-break: keep-all;
 		font-size: 0.82rem;
 		line-height: 1.7;
 		display: grid;
@@ -325,6 +335,7 @@ for (let i = -1; i < DAYS; i++) {
 		color: var(--warn);
 	}
 	.bad {
+		word-break: keep-all;
 		margin-top: 0.35rem;
 		color: var(--muted);
 		font-size: 0.75rem;
