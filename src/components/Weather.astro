@@ -155,7 +155,9 @@ const groups = [
 			hour: 'numeric',
 			minute: '2-digit',
 		});
-		q(root, 'updated').textContent = stale ? `Offline · showing ${time}` : `Updated ${time} · Open-Meteo`;
+		const note = q(root, 'updated');
+		note.classList.toggle('stale', stale);
+		note.textContent = stale ? `Couldn't refresh · last updated ${time}` : `Updated ${time} · Open-Meteo`;
 	}
 
 	async function refresh() {
@@ -268,5 +270,9 @@ const groups = [
 		color: var(--muted);
 		text-align: right;
 		opacity: 0.8;
+	}
+	.foot.stale {
+		color: var(--danger);
+		opacity: 1;
 	}
 </style>

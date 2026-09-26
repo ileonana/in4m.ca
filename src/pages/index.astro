@@ -18,7 +18,7 @@ const description = 'A personal dashboard: time, weather and the GO train, at a 
 	<main class="bento">
 		<div class="span-all"><Clock /></div>
 		<div class="span-all"><Weather /></div>
-		<div class="span-2"><GoTrain /></div>
+		<div class="span-all"><GoTrain /></div>
 	</main>
 </Base>
 
@@ -89,13 +89,5 @@ const description = 'A personal dashboard: time, weather and the GO train, at a 
 	}
 	.span-all {
 		grid-column: 1 / -1;
-	}
-	.span-2 {
-		grid-column: span 2;
-	}
-	@media (max-width: 42rem) {
-		.span-2 {
-			grid-column: auto;
-		}
 	}
 </style>

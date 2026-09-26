@@ -5,6 +5,9 @@ service date, the scheduled trains in each direction with their departure from
 the origin station and arrival at the destination.
 
 Usage: uv run scripts/go-schedule.py [path/to/GO-GTFS.zip]
+
+If the refresh fails, the existing file is left untouched (exit code 0) so the site
+still builds with the last good timetable.
 """
 
 import csv
@@ -34,7 +37,7 @@ def hhmm(t):
     return f"{int(h):02d}:{m}"
 
 
-def main():
+def build():
     if len(sys.argv) > 1:
         zf = zipfile.ZipFile(sys.argv[1])
     else:
@@ -88,8 +91,23 @@ def main():
         "feedEnd": f"{feed['feed_end_date'][:4]}-{feed['feed_end_date'][4:6]}-{feed['feed_end_date'][6:]}",
         "days": dict(sorted(days.items())),
     }
+    if not days:
+        raise RuntimeError("feed contained no Barrie line trains between Maple and Union")
+    return out
+
+
+def main():
+    try:
+        out = build()
+    except Exception as e:
+        # Keep serving the last good file; the tile flags it as stale once it is old enough.
+        if not OUT.exists():
+            raise
+        last = json.loads(OUT.read_text())["generated"]
+        print(f"::warning::GO schedule refresh failed ({e}); keeping data generated {last}", file=sys.stderr)
+        return
     OUT.write_text(json.dumps(out, separators=(",", ":")) + "\n")
-    print(f"Wrote {OUT} ({len(days)} days)", file=sys.stderr)
+    print(f"Wrote {OUT} ({len(out['days'])} days)", file=sys.stderr)
 
 
 if __name__ == "__main__":

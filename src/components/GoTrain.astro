@@ -23,7 +23,7 @@ import schedule from '../data/go-barrie.json';
 		</div>
 	</div>
 
-	<footer>Scheduled times · no live delays yet</footer>
+	<footer data-role="updated" data-generated={schedule.generated} data-end={schedule.feedEnd}>Scheduled times · no live delays yet</footer>
 
 	<script type="application/json" id="go-schedule" set:html={JSON.stringify(schedule.days)} />
 </section>
@@ -106,14 +106,46 @@ import schedule from '../data/go-barrie.json';
 				q('then').textContent = '';
 				continue;
 			}
+			// Which service day a departure falls on, relative to today (0 = today, 1 = tomorrow).
+			const dayOf = (x: { dep: number }) => Math.floor((x.dep - at(now.date, '00:00')) / 1440);
 			q('next').textContent = clock(first.train.dep);
-			q('eta').textContent = `${eta(first.dep - now.minutes)} · arrives ${clock(first.train.arr)}`;
-			q('then').textContent = list[1] ? `Then ${clock(list[1].train.dep)}` : '';
+			q('eta').textContent =
+				`${dayOf(first) > 0 ? 'Tomorrow · ' : ''}${eta(first.dep - now.minutes)} · arrives ${clock(first.train.arr)}`;
+			const later = list.slice(1, 4).map((x, i) => {
+				const prev = list[i]; // the departure just before this one
+				return `${dayOf(x) > dayOf(prev) ? 'tomorrow ' : ''}${clock(x.train.dep)}`;
+			});
+			q('then').textContent = later.length ? `Then ${later.join(' · ')}` : '';
 		}
 	}
 
+	// Footer: when the timetable was last refreshed; red if the daily refresh has been failing.
+	function renderFooter() {
+		const el = document.querySelector<HTMLElement>('#go-train [data-role="updated"]')!;
+		const generated = new Date(el.dataset.generated!);
+		const when = new Intl.DateTimeFormat('en-CA', {
+			timeZone: tz,
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+		}).format(generated);
+		const ended = torontoNow().date > el.dataset.end!;
+		const stale = ended || Date.now() - generated.getTime() > 30 * 3600_000; // daily refresh + slack
+		el.classList.toggle('stale', stale);
+		el.textContent = ended
+			? `Timetable ended · last updated ${when}`
+			: stale
+				? `Couldn't refresh timetable · last updated ${when}`
+				: `Scheduled times · timetable updated ${when} · no live delays yet`;
+	}
+
 	render();
-	setInterval(render, 15_000);
+	renderFooter();
+	setInterval(() => {
+		render();
+		renderFooter();
+	}, 15_000);
 </script>
 
 <style>
@@ -168,5 +200,9 @@ import schedule from '../data/go-barrie.json';
 		font-size: 0.68rem;
 		letter-spacing: 0.04em;
 		opacity: 0.85;
+	}
+	footer.stale {
+		color: var(--danger);
+		opacity: 1;
 	}
 </style>
