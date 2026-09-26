@@ -23,18 +23,23 @@ const description = 'A personal dashboard.';
 
 <style>
 	.top {
-		padding: 1.5rem var(--gutter) 0.5rem;
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: 2rem var(--gutter) 0.25rem;
 	}
 	h1 {
 		margin: 0;
-		font-size: 1.1rem;
-		font-weight: 600;
+		font-size: 0.8rem;
+		font-weight: 500;
+		letter-spacing: 0.32em;
+		text-transform: uppercase;
+		color: var(--muted);
 	}
 	.bento {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-		gap: 1rem;
-		padding: 1rem var(--gutter) 3rem;
+		gap: 1.1rem;
+		padding: 1rem var(--gutter) 4rem;
 		max-width: 72rem;
 		margin: 0 auto;
 	}

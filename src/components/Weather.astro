@@ -22,7 +22,7 @@ const groups = [
 	{
 		groups.map((g) => (
 			<div class="group">
-				<h2>{g.title}</h2>
+				<h2 class="group-title">{g.title}</h2>
 				<div class="cells">
 					{g.places.map((p) => (
 						<div class="cell" data-lat={p.lat} data-lon={p.lon}>
@@ -31,8 +31,8 @@ const groups = [
 								{p.zh && <span>{p.zh}</span>}
 							</div>
 							<div class="now">
-								<span class="icon" data-role="icon" aria-hidden="true">·</span>
-								<span class="temp" data-role="temp">–</span>
+								<span class="icon" data-role="icon" aria-hidden="true"></span>
+								<span class="temp num" data-role="temp">–</span>
 							</div>
 							<div class="cond" data-role="cond">Loading…</div>
 							<div class="range" data-role="range" />
@@ -49,36 +49,54 @@ const groups = [
 	const REFRESH_MS = 15 * 60 * 1000; // Open-Meteo updates current conditions every 15 min
 	const CACHE_KEY = 'weather-v1';
 
+	// Minimal line icons (24x24, stroked with currentColor).
+	const CLOUD = 'M6.5 18.5h10.25a3.75 3.75 0 0 0 .5-7.46A5.5 5.5 0 0 0 6.7 12.2a3.2 3.2 0 0 0-.2 6.3z';
+	const CLOUD_HIGH = 'M6.5 14.5h10.25a3.75 3.75 0 0 0 .5-7.46A5.5 5.5 0 0 0 6.7 8.2a3.2 3.2 0 0 0-.2 6.3z';
+	const icons: Record<string, string> = {
+		sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+		moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2z"/>',
+		partlyDay: `<circle cx="8.5" cy="8.5" r="2.6"/><path d="M8.5 3v1M3 8.5h1M4.6 4.6l.7.7M12.4 4.6l-.7.7"/><path d="M9 20h8a3.2 3.2 0 0 0 .4-6.4 4.5 4.5 0 0 0-8.6 1A2.7 2.7 0 0 0 9 20z"/>`,
+		partlyNight: `<path d="M11.5 4.3a4 4 0 1 0 4 5 3.6 3.6 0 0 1-4-5z"/><path d="M9 20h8a3.2 3.2 0 0 0 .4-6.4 4.5 4.5 0 0 0-8.6 1A2.7 2.7 0 0 0 9 20z"/>`,
+		cloud: `<path d="${CLOUD}"/>`,
+		fog: '<path d="M4 8.5h16M6.5 12.5h11M4 16.5h16"/>',
+		drizzle: `<path d="${CLOUD_HIGH}"/><path d="M8 18l-.6 1.6M12 18l-.6 1.6M16 18l-.6 1.6"/>`,
+		rain: `<path d="${CLOUD_HIGH}"/><path d="M8 17.5l-1 2.8M12 17.5l-1 2.8M16 17.5l-1 2.8"/>`,
+		snow: `<path d="${CLOUD_HIGH}"/><path d="M8 18v.01M12 19.5v.01M16 18v.01M10 21v.01M14 21v.01" stroke-width="2.2"/>`,
+		storm: `<path d="${CLOUD_HIGH}"/><path d="M12.8 14.5l-2.3 3.2h3l-2.3 3.3"/>`,
+	};
+	const svg = (key: string) =>
+		`<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${icons[key] ?? ''}</svg>`;
+
 	// WMO weather codes -> [day icon, night icon, label]
 	const codes: Record<number, [string, string, string]> = {
-		0: ['☀️', '🌙', 'Clear'],
-		1: ['🌤️', '🌙', 'Mostly clear'],
-		2: ['⛅', '☁️', 'Partly cloudy'],
-		3: ['☁️', '☁️', 'Overcast'],
-		45: ['🌫️', '🌫️', 'Fog'],
-		48: ['🌫️', '🌫️', 'Freezing fog'],
-		51: ['🌦️', '🌧️', 'Light drizzle'],
-		53: ['🌦️', '🌧️', 'Drizzle'],
-		55: ['🌧️', '🌧️', 'Heavy drizzle'],
-		56: ['🌧️', '🌧️', 'Freezing drizzle'],
-		57: ['🌧️', '🌧️', 'Freezing drizzle'],
-		61: ['🌦️', '🌧️', 'Light rain'],
-		63: ['🌧️', '🌧️', 'Rain'],
-		65: ['🌧️', '🌧️', 'Heavy rain'],
-		66: ['🌧️', '🌧️', 'Freezing rain'],
-		67: ['🌧️', '🌧️', 'Freezing rain'],
-		71: ['🌨️', '🌨️', 'Light snow'],
-		73: ['🌨️', '🌨️', 'Snow'],
-		75: ['❄️', '❄️', 'Heavy snow'],
-		77: ['🌨️', '🌨️', 'Snow grains'],
-		80: ['🌦️', '🌧️', 'Showers'],
-		81: ['🌧️', '🌧️', 'Showers'],
-		82: ['⛈️', '⛈️', 'Violent showers'],
-		85: ['🌨️', '🌨️', 'Snow showers'],
-		86: ['❄️', '❄️', 'Heavy snow showers'],
-		95: ['⛈️', '⛈️', 'Thunderstorm'],
-		96: ['⛈️', '⛈️', 'Thunderstorm, hail'],
-		99: ['⛈️', '⛈️', 'Thunderstorm, hail'],
+		0: ['sun', 'moon', 'Clear'],
+		1: ['sun', 'moon', 'Mostly clear'],
+		2: ['partlyDay', 'partlyNight', 'Partly cloudy'],
+		3: ['cloud', 'cloud', 'Overcast'],
+		45: ['fog', 'fog', 'Fog'],
+		48: ['fog', 'fog', 'Freezing fog'],
+		51: ['drizzle', 'drizzle', 'Light drizzle'],
+		53: ['drizzle', 'drizzle', 'Drizzle'],
+		55: ['drizzle', 'drizzle', 'Heavy drizzle'],
+		56: ['drizzle', 'drizzle', 'Freezing drizzle'],
+		57: ['drizzle', 'drizzle', 'Freezing drizzle'],
+		61: ['rain', 'rain', 'Light rain'],
+		63: ['rain', 'rain', 'Rain'],
+		65: ['rain', 'rain', 'Heavy rain'],
+		66: ['rain', 'rain', 'Freezing rain'],
+		67: ['rain', 'rain', 'Freezing rain'],
+		71: ['snow', 'snow', 'Light snow'],
+		73: ['snow', 'snow', 'Snow'],
+		75: ['snow', 'snow', 'Heavy snow'],
+		77: ['snow', 'snow', 'Snow grains'],
+		80: ['rain', 'rain', 'Showers'],
+		81: ['rain', 'rain', 'Showers'],
+		82: ['storm', 'storm', 'Violent showers'],
+		85: ['snow', 'snow', 'Snow showers'],
+		86: ['snow', 'snow', 'Heavy snow showers'],
+		95: ['storm', 'storm', 'Thunderstorm'],
+		96: ['storm', 'storm', 'Thunderstorm, hail'],
+		99: ['storm', 'storm', 'Thunderstorm, hail'],
 	};
 
 	type Place = {
@@ -114,8 +132,8 @@ const groups = [
 	function render({ at, data }: Cached, stale = false) {
 		cells.forEach((cell, i) => {
 			const w = data[i];
-			const [day, night, label] = codes[w.current.weather_code] ?? ['·', '·', '—'];
-			q(cell, 'icon').textContent = w.current.is_day ? day : night;
+			const [day, night, label] = codes[w.current.weather_code] ?? ['cloud', 'cloud', '—'];
+			q(cell, 'icon').innerHTML = svg(w.current.is_day ? day : night);
 			q(cell, 'temp').textContent = deg(w.current.temperature_2m);
 			const feels = Math.round(w.current.apparent_temperature);
 			q(cell, 'cond').textContent =
@@ -123,7 +141,7 @@ const groups = [
 			const rain = w.daily.precipitation_probability_max[0];
 			q(cell, 'range').textContent =
 				`H ${deg(w.daily.temperature_2m_max[0])}  L ${deg(w.daily.temperature_2m_min[0])}` +
-				(rain != null ? `  ·  ☔ ${rain}%` : '');
+				(rain != null ? `  ·  ${rain}% rain` : '');
 		});
 		const time = new Date(at).toLocaleTimeString('en-CA', {
 			timeZone: 'America/Toronto',
@@ -170,87 +188,68 @@ const groups = [
 
 <style>
 	.tile {
-		background: var(--card);
-		border: 1px solid var(--line);
-		border-radius: 1.25rem;
-		padding: 1rem 1.5rem 0.75rem;
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 1rem 2rem;
+		gap: 1.25rem 2.5rem;
+		padding-bottom: 1rem;
 	}
 	.group + .group {
 		border-left: 1px solid var(--line);
-		padding-left: 2rem;
-	}
-	h2 {
-		margin: 0 0 0.6rem;
-		font-size: 0.95rem;
-		font-weight: 600;
+		padding-left: 2.5rem;
 	}
 	.cells {
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
-		gap: 1rem 1.5rem;
+		gap: 1rem 1.75rem;
 	}
 	.cell + .cell {
 		border-left: 1px solid var(--line);
-		padding-left: 1.5rem;
+		padding-left: 1.75rem;
 	}
 	@media (max-width: 42rem) {
 		.tile {
 			grid-template-columns: 1fr;
+			padding: 1.25rem 1.25rem 0.9rem;
 		}
 		.group + .group {
 			border-left: 0;
 			padding-left: 0;
 			border-top: 1px solid var(--line);
-			padding-top: 1rem;
+			padding-top: 1.25rem;
 		}
 		.cell + .cell {
 			padding-left: 1rem;
 		}
 	}
-	.label {
-		font-size: 0.75rem;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		color: var(--muted);
-	}
 	.label span {
-		color: var(--go);
-		font-weight: 600;
-		letter-spacing: 0;
-		margin-left: 0.25rem;
+		font-weight: 500;
+		letter-spacing: 0.02em;
+		text-transform: none;
 	}
 	.now {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		margin: 0.15rem 0;
+		gap: 0.6rem;
+		margin: 0.35rem 0 0.2rem;
 	}
 	.icon {
-		font-size: 1.6rem;
-		line-height: 1;
-	}
-	.temp {
-		font-size: clamp(1.8rem, 4.5vw, 2.2rem);
-		font-weight: 650;
-		letter-spacing: -0.02em;
-		line-height: 1.2;
-		font-variant-numeric: tabular-nums;
+		display: inline-flex;
+		color: var(--muted);
 	}
 	.cond {
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 	}
 	.range {
-		font-size: 0.8rem;
+		font-size: 0.75rem;
 		color: var(--muted);
 		white-space: pre;
 	}
 	.foot {
 		grid-column: 1 / -1;
-		font-size: 0.72rem;
+		font-size: 0.68rem;
+		letter-spacing: 0.04em;
 		color: var(--muted);
 		text-align: right;
+		opacity: 0.8;
 	}
 </style>
