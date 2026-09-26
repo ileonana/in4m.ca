@@ -19,32 +19,43 @@ for (let i = -1; i < DAYS; i++) {
 }
 ---
 
-<section class="tile clock" id="clock" aria-label="Time, date and next holiday">
-	<div class="cell" data-zone="America/Toronto">
-		<div class="label">Toronto <span data-role="abbr"></span></div>
-		<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
-		<div class="date" data-role="date"></div>
-	</div>
-
-	<div class="cell" data-zone="Asia/Shanghai">
-		<div class="label">China <span>CST</span></div>
-		<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
-		<div class="date" data-role="date"></div>
-		<div class="lunar" data-role="lunar"></div>
-		<div class="almanac" data-role="almanac" hidden>
-			<div class="row yi"><b>宜</b><span data-role="yi"></span><button type="button" class="more" data-role="yi-more" hidden></button></div>
-			<div class="row ji"><b>忌</b><span data-role="ji"></span><button type="button" class="more" data-role="ji-more" hidden></button></div>
-			<div class="bad" data-role="bad"></div>
+<section class="tile clock" id="clock" aria-label="Time, date, holidays and almanac">
+	<div class="group">
+		<h2>North America</h2>
+		<div class="cells">
+			<div class="cell" data-zone="America/Toronto">
+				<div class="label">Toronto <span data-role="abbr"></span></div>
+				<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
+				<div class="date" data-role="date"></div>
+			</div>
+			<div class="cell holiday">
+				<div class="label">Next holiday · Ontario</div>
+				<div class="days"><span data-role="days">–</span><small data-role="unit">days</small></div>
+				<div class="date" data-role="holiday"></div>
+				<div class="lunar" data-role="holiday-date"></div>
+			</div>
 		</div>
-		<script type="application/json" id="almanac-data" set:html={JSON.stringify(almanac)} />
 	</div>
 
-	<div class="cell holiday">
-		<div class="label">Next holiday · Ontario</div>
-		<div class="days"><span data-role="days">–</span><small data-role="unit">days</small></div>
-		<div class="date" data-role="holiday"></div>
-		<div class="lunar" data-role="holiday-date"></div>
+	<div class="group wide">
+		<h2>China</h2>
+		<div class="cells">
+			<div class="cell" data-zone="Asia/Shanghai">
+				<div class="label">Beijing <span>CST</span></div>
+				<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
+				<div class="date" data-role="date"></div>
+				<div class="lunar" data-role="lunar"></div>
+			</div>
+			<div class="cell almanac" data-role="almanac" hidden>
+				<div class="label">黄历</div>
+				<div class="row yi"><b>宜</b><span data-role="yi"></span><button type="button" class="more" data-role="yi-more" hidden></button></div>
+				<div class="row ji"><b>忌</b><span data-role="ji"></span><button type="button" class="more" data-role="ji-more" hidden></button></div>
+				<div class="bad" data-role="bad"></div>
+			</div>
+		</div>
 	</div>
+
+	<script type="application/json" id="almanac-data" set:html={JSON.stringify(almanac)} />
 </section>
 
 <script>
@@ -193,7 +204,7 @@ for (let i = -1; i < DAYS; i++) {
 				const p = f(zone, 'lunar', { dateStyle: 'full' }, 'zh-CN-u-ca-chinese').formatToParts(now);
 				const get = (t: string) => p.find((x) => x.type === t)?.value ?? '';
 				q(cell, 'lunar').textContent = `农历 ${get('yearName')}年 ${get('month')}${get('day')}`;
-				renderAlmanac(cell, now);
+				renderAlmanac(root, now);
 			}
 		}
 
@@ -227,19 +238,49 @@ for (let i = -1; i < DAYS; i++) {
 		border-radius: 1.25rem;
 		padding: 1rem 1.5rem;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+		grid-template-columns: 1fr 1fr;
 		gap: 1rem 2rem;
 	}
-	.cell + .cell {
+	.group + .group {
 		border-left: 1px solid var(--line);
 		padding-left: 2rem;
 	}
+	h2 {
+		margin: 0 0 0.6rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.cells {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1rem 1.5rem;
+	}
+	.cell + .cell {
+		border-left: 1px solid var(--line);
+		padding-left: 1.5rem;
+	}
 	@media (max-width: 42rem) {
-		.cell + .cell {
+		.tile {
+			grid-template-columns: 1fr;
+		}
+		.group + .group {
 			border-left: 0;
 			padding-left: 0;
 			border-top: 1px solid var(--line);
 			padding-top: 1rem;
+		}
+		.cell + .cell {
+			padding-left: 1rem;
+		}
+		/* the almanac needs the width, so China's cells stack on phones */
+		.wide .cells {
+			grid-template-columns: 1fr;
+		}
+		.wide .cell + .cell {
+			border-left: 0;
+			padding-left: 0;
+			border-top: 1px solid var(--line);
+			padding-top: 0.75rem;
 		}
 	}
 	.label {
@@ -275,11 +316,14 @@ for (let i = -1; i < DAYS; i++) {
 		color: var(--muted);
 	}
 	.almanac {
-		margin-top: 0.4rem;
 		font-size: 0.8rem;
 		line-height: 1.5;
 		display: grid;
 		gap: 0.1rem;
+		align-content: start;
+	}
+	.almanac[hidden] {
+		display: none;
 	}
 	.row {
 		display: flex;
@@ -288,7 +332,7 @@ for (let i = -1; i < DAYS; i++) {
 		gap: 0 0.1rem;
 	}
 	.bad {
-		margin-top: 0.2rem;
+		margin-top: 0.3rem;
 		color: var(--muted);
 		font-size: 0.75rem;
 	}
