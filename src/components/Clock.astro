@@ -1,4 +1,22 @@
 ---
+import { Solar } from 'lunar-javascript';
+
+// 黄历 宜/忌 for each day (China date), computed at build time so the client ships no library.
+// The weekly deploy keeps this window rolling forward.
+const DAYS = 120;
+const shanghai = new Intl.DateTimeFormat('en-CA', {
+	timeZone: 'Asia/Shanghai',
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+});
+const [y, m, d] = shanghai.format(new Date()).split('-').map(Number);
+const almanac: Record<string, { yi: string[]; ji: string[] }> = {};
+for (let i = -1; i < DAYS; i++) {
+	const solar = Solar.fromYmd(y, m, d).next(i);
+	const lunar = solar.getLunar();
+	almanac[solar.toYmd()] = { yi: lunar.getDayYi(), ji: lunar.getDayJi() };
+}
 ---
 
 <section class="tile clock" id="clock" aria-label="Time, date and next holiday">
@@ -13,6 +31,11 @@
 		<div class="time"><span data-role="time">--:--</span><small data-role="sec"></small></div>
 		<div class="date" data-role="date"></div>
 		<div class="lunar" data-role="lunar"></div>
+		<div class="almanac" data-role="almanac" hidden>
+			<div class="yi" title=""><b>宜</b><span data-role="yi"></span></div>
+			<div class="ji" title=""><b>忌</b><span data-role="ji"></span></div>
+		</div>
+		<script type="application/json" id="almanac-data" set:html={JSON.stringify(almanac)} />
 	</div>
 
 	<div class="cell holiday">
@@ -91,6 +114,24 @@
 		return [...holidays(y), ...holidays(y + 1)].find((h) => h.date >= today)!;
 	}
 
+	// --- 黄历 宜/忌 ---------------------------------------------------------------
+	const almanac: Record<string, { yi: string[]; ji: string[] }> = JSON.parse(
+		document.getElementById('almanac-data')!.textContent!,
+	);
+	const SHOWN = 6;
+
+	function renderAlmanac(cell: HTMLElement, now: Date) {
+		const day = almanac[f('Asia/Shanghai', 'ymd', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)];
+		const box = q(cell, 'almanac');
+		box.hidden = !day;
+		if (!day) return;
+		for (const [role, list] of [['yi', day.yi], ['ji', day.ji]] as const) {
+			const span = q(cell, role);
+			span.textContent = list.length ? list.slice(0, SHOWN).join(' ') + (list.length > SHOWN ? ' …' : '') : '诸事不宜';
+			span.parentElement!.title = list.join(' ');
+		}
+	}
+
 	// --- Rendering ------------------------------------------------------------------
 	const root = document.getElementById('clock')!;
 	const q = (el: Element, role: string) => el.querySelector<HTMLElement>(`[data-role="${role}"]`)!;
@@ -121,6 +162,7 @@
 				const p = f(zone, 'lunar', { dateStyle: 'full' }, 'zh-CN-u-ca-chinese').formatToParts(now);
 				const get = (t: string) => p.find((x) => x.type === t)?.value ?? '';
 				q(cell, 'lunar').textContent = `农历 ${get('yearName')}年 ${get('month')}${get('day')}`;
+				renderAlmanac(cell, now);
 			}
 		}
 
@@ -200,5 +242,28 @@
 	.lunar {
 		font-size: 0.85rem;
 		color: var(--muted);
+	}
+	.almanac {
+		margin-top: 0.4rem;
+		font-size: 0.8rem;
+		line-height: 1.5;
+		display: grid;
+		gap: 0.1rem;
+	}
+	.almanac b {
+		display: inline-block;
+		width: 1.4rem;
+		margin-right: 0.35rem;
+		text-align: center;
+		border-radius: 0.3rem;
+		color: #fff;
+		font-weight: 600;
+		font-size: 0.72rem;
+	}
+	.yi b {
+		background: var(--go);
+	}
+	.ji b {
+		background: #b5482f;
 	}
 </style>

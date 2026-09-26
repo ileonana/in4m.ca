@@ -1,0 +1,256 @@
+---
+// Add or remove places here; the client script reads them from the markup.
+const groups = [
+	{
+		title: 'North America',
+		places: [
+			{ name: 'Toronto', lat: 43.6532, lon: -79.3832 },
+			{ name: 'Maple', lat: 43.8595, lon: -79.507 },
+		],
+	},
+	{
+		title: 'China',
+		places: [
+			{ name: 'Taiyuan', zh: '太原', lat: 37.8706, lon: 112.5489 },
+			{ name: 'Sanya', zh: '三亚', lat: 18.2528, lon: 109.512 },
+		],
+	},
+];
+---
+
+<section class="tile weather" id="weather" aria-label="Weather">
+	{
+		groups.map((g) => (
+			<div class="group">
+				<h2>{g.title}</h2>
+				<div class="cells">
+					{g.places.map((p) => (
+						<div class="cell" data-lat={p.lat} data-lon={p.lon}>
+							<div class="label">
+								{p.name}
+								{p.zh && <span>{p.zh}</span>}
+							</div>
+							<div class="now">
+								<span class="icon" data-role="icon" aria-hidden="true">·</span>
+								<span class="temp" data-role="temp">–</span>
+							</div>
+							<div class="cond" data-role="cond">Loading…</div>
+							<div class="range" data-role="range" />
+						</div>
+					))}
+				</div>
+			</div>
+		))
+	}
+	<div class="foot" data-role="updated"></div>
+</section>
+
+<script>
+	const REFRESH_MS = 15 * 60 * 1000; // Open-Meteo updates current conditions every 15 min
+	const CACHE_KEY = 'weather-v1';
+
+	// WMO weather codes -> [day icon, night icon, label]
+	const codes: Record<number, [string, string, string]> = {
+		0: ['☀️', '🌙', 'Clear'],
+		1: ['🌤️', '🌙', 'Mostly clear'],
+		2: ['⛅', '☁️', 'Partly cloudy'],
+		3: ['☁️', '☁️', 'Overcast'],
+		45: ['🌫️', '🌫️', 'Fog'],
+		48: ['🌫️', '🌫️', 'Freezing fog'],
+		51: ['🌦️', '🌧️', 'Light drizzle'],
+		53: ['🌦️', '🌧️', 'Drizzle'],
+		55: ['🌧️', '🌧️', 'Heavy drizzle'],
+		56: ['🌧️', '🌧️', 'Freezing drizzle'],
+		57: ['🌧️', '🌧️', 'Freezing drizzle'],
+		61: ['🌦️', '🌧️', 'Light rain'],
+		63: ['🌧️', '🌧️', 'Rain'],
+		65: ['🌧️', '🌧️', 'Heavy rain'],
+		66: ['🌧️', '🌧️', 'Freezing rain'],
+		67: ['🌧️', '🌧️', 'Freezing rain'],
+		71: ['🌨️', '🌨️', 'Light snow'],
+		73: ['🌨️', '🌨️', 'Snow'],
+		75: ['❄️', '❄️', 'Heavy snow'],
+		77: ['🌨️', '🌨️', 'Snow grains'],
+		80: ['🌦️', '🌧️', 'Showers'],
+		81: ['🌧️', '🌧️', 'Showers'],
+		82: ['⛈️', '⛈️', 'Violent showers'],
+		85: ['🌨️', '🌨️', 'Snow showers'],
+		86: ['❄️', '❄️', 'Heavy snow showers'],
+		95: ['⛈️', '⛈️', 'Thunderstorm'],
+		96: ['⛈️', '⛈️', 'Thunderstorm, hail'],
+		99: ['⛈️', '⛈️', 'Thunderstorm, hail'],
+	};
+
+	type Place = {
+		current: { temperature_2m: number; apparent_temperature: number; weather_code: number; is_day: number };
+		daily: {
+			temperature_2m_max: number[];
+			temperature_2m_min: number[];
+			precipitation_probability_max: (number | null)[];
+		};
+	};
+	type Cached = { at: number; data: Place[] };
+
+	const root = document.getElementById('weather')!;
+	const cells = [...root.querySelectorAll<HTMLElement>('.cell')];
+	const q = (el: Element, role: string) => el.querySelector<HTMLElement>(`[data-role="${role}"]`)!;
+
+	function readCache(): Cached | null {
+		try {
+			const c = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null') as Cached | null;
+			return c && c.data.length === cells.length ? c : null;
+		} catch {
+			return null;
+		}
+	}
+	function writeCache(c: Cached) {
+		try {
+			localStorage.setItem(CACHE_KEY, JSON.stringify(c));
+		} catch {}
+	}
+
+	const deg = (n: number) => `${Math.round(n)}°`;
+
+	function render({ at, data }: Cached, stale = false) {
+		cells.forEach((cell, i) => {
+			const w = data[i];
+			const [day, night, label] = codes[w.current.weather_code] ?? ['·', '·', '—'];
+			q(cell, 'icon').textContent = w.current.is_day ? day : night;
+			q(cell, 'temp').textContent = deg(w.current.temperature_2m);
+			const feels = Math.round(w.current.apparent_temperature);
+			q(cell, 'cond').textContent =
+				feels === Math.round(w.current.temperature_2m) ? label : `${label} · feels ${feels}°`;
+			const rain = w.daily.precipitation_probability_max[0];
+			q(cell, 'range').textContent =
+				`H ${deg(w.daily.temperature_2m_max[0])}  L ${deg(w.daily.temperature_2m_min[0])}` +
+				(rain != null ? `  ·  ☔ ${rain}%` : '');
+		});
+		const time = new Date(at).toLocaleTimeString('en-CA', {
+			timeZone: 'America/Toronto',
+			hour: 'numeric',
+			minute: '2-digit',
+		});
+		q(root, 'updated').textContent = stale ? `Offline · showing ${time}` : `Updated ${time} · Open-Meteo`;
+	}
+
+	async function refresh() {
+		const cached = readCache();
+		if (cached && Date.now() - cached.at < REFRESH_MS) {
+			render(cached);
+			return;
+		}
+		const url = new URL('https://api.open-meteo.com/v1/forecast');
+		url.search = new URLSearchParams({
+			latitude: cells.map((c) => c.dataset.lat).join(','),
+			longitude: cells.map((c) => c.dataset.lon).join(','),
+			current: 'temperature_2m,apparent_temperature,weather_code,is_day',
+			daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+			timezone: 'auto',
+			forecast_days: '1',
+		}).toString();
+		try {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(String(res.status));
+			const fresh: Cached = { at: Date.now(), data: await res.json() };
+			writeCache(fresh);
+			render(fresh);
+		} catch {
+			if (cached) render(cached, true);
+			else for (const cell of cells) q(cell, 'cond').textContent = 'Unavailable';
+		}
+	}
+
+	refresh();
+	setInterval(refresh, REFRESH_MS);
+	// Timers are throttled in background tabs, so also refresh when the tab comes back.
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden) refresh();
+	});
+</script>
+
+<style>
+	.tile {
+		background: var(--card);
+		border: 1px solid var(--line);
+		border-radius: 1.25rem;
+		padding: 1rem 1.5rem 0.75rem;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem 2rem;
+	}
+	.group + .group {
+		border-left: 1px solid var(--line);
+		padding-left: 2rem;
+	}
+	h2 {
+		margin: 0 0 0.6rem;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.cells {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1rem 1.5rem;
+	}
+	.cell + .cell {
+		border-left: 1px solid var(--line);
+		padding-left: 1.5rem;
+	}
+	@media (max-width: 42rem) {
+		.tile {
+			grid-template-columns: 1fr;
+		}
+		.group + .group {
+			border-left: 0;
+			padding-left: 0;
+			border-top: 1px solid var(--line);
+			padding-top: 1rem;
+		}
+		.cell + .cell {
+			padding-left: 1rem;
+		}
+	}
+	.label {
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.label span {
+		color: var(--go);
+		font-weight: 600;
+		letter-spacing: 0;
+		margin-left: 0.25rem;
+	}
+	.now {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.15rem 0;
+	}
+	.icon {
+		font-size: 1.6rem;
+		line-height: 1;
+	}
+	.temp {
+		font-size: clamp(1.8rem, 4.5vw, 2.2rem);
+		font-weight: 650;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+	}
+	.cond {
+		font-size: 0.9rem;
+	}
+	.range {
+		font-size: 0.8rem;
+		color: var(--muted);
+		white-space: pre;
+	}
+	.foot {
+		grid-column: 1 / -1;
+		font-size: 0.72rem;
+		color: var(--muted);
+		text-align: right;
+	}
+</style>

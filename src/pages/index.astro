@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Clock from '../components/Clock.astro';
+import Weather from '../components/Weather.astro';
 import GoTrain from '../components/GoTrain.astro';
 
 const name = 'inform';
@@ -15,6 +16,7 @@ const description = 'A personal dashboard.';
 	<!-- Bento grid: each tile is a self-contained component. Add new ones below. -->
 	<main class="bento">
 		<div class="span-all"><Clock /></div>
+		<div class="span-all"><Weather /></div>
 		<div class="span-2"><GoTrain /></div>
 	</main>
 </Base>
