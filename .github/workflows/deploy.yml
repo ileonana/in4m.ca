@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Weekly rebuild to refresh the GO train timetable (feed is published in ~2-month windows)
+    - cron: '0 9 * * 1'
 
 permissions:
   contents: read
@@ -20,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Refresh GO train schedule
+        run: python3 scripts/go-schedule.py
       - name: Install, build, and upload site
         uses: withastro/action@v3
         with:

@@ -1,0 +1,179 @@
+---
+import schedule from '../data/go-barrie.json';
+---
+
+<section class="tile go" id="go-train" aria-labelledby="go-title">
+	<header>
+		<h2 id="go-title">GO Train · Barrie line</h2>
+		<span class="sub">Maple ⇄ Union</span>
+	</header>
+
+	<div class="dirs">
+		<div class="dir" data-dir="toUnion">
+			<div class="route">Maple <span>→</span> Union</div>
+			<div class="next" data-role="next">–</div>
+			<div class="eta" data-role="eta"></div>
+			<div class="then" data-role="then"></div>
+		</div>
+		<div class="dir" data-dir="toMaple">
+			<div class="route">Union <span>→</span> Maple</div>
+			<div class="next" data-role="next">–</div>
+			<div class="eta" data-role="eta"></div>
+			<div class="then" data-role="then"></div>
+		</div>
+	</div>
+
+	<footer>Scheduled times · no live delays yet</footer>
+
+	<script type="application/json" id="go-schedule" set:html={JSON.stringify(schedule.days)} />
+</section>
+
+<script>
+	type Train = { dep: string; arr: string };
+	type Day = { toUnion: Train[]; toMaple: Train[] };
+
+	const days: Record<string, Day> = JSON.parse(
+		document.getElementById('go-schedule')!.textContent!,
+	);
+
+	const tz = 'America/Toronto';
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: tz,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		hourCycle: 'h23',
+	});
+
+	// Toronto wall-clock "now" as minutes since epoch, treating wall time as UTC.
+	function torontoNow() {
+		const p = Object.fromEntries(parts.formatToParts(new Date()).map((x) => [x.type, x.value]));
+		return {
+			date: `${p.year}-${p.month}-${p.day}`,
+			minutes: Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) / 60000,
+		};
+	}
+
+	function shiftDate(date: string, delta: number) {
+		const d = new Date(date + 'T00:00:00Z');
+		d.setUTCDate(d.getUTCDate() + delta);
+		return d.toISOString().slice(0, 10);
+	}
+
+	// Minutes since epoch (wall-clock) for a service date + "HH:MM" (may be >= 24:00).
+	function at(date: string, hhmm: string) {
+		const [h, m] = hhmm.split(':').map(Number);
+		return new Date(date + 'T00:00:00Z').getTime() / 60000 + h * 60 + m;
+	}
+
+	function clock(hhmm: string) {
+		let [h, m] = hhmm.split(':').map(Number);
+		h %= 24;
+		const suffix = h >= 12 ? 'pm' : 'am';
+		return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${suffix}`;
+	}
+
+	function upcoming(dir: keyof Day, now: { date: string; minutes: number }) {
+		const out: { dep: number; train: Train }[] = [];
+		// Yesterday's service can run past midnight; tomorrow covers late-night lookups.
+		for (const d of [shiftDate(now.date, -1), now.date, shiftDate(now.date, 1)]) {
+			for (const train of days[d]?.[dir] ?? []) {
+				const dep = at(d, train.dep);
+				if (dep >= now.minutes) out.push({ dep, train });
+			}
+		}
+		return out.sort((a, b) => a.dep - b.dep);
+	}
+
+	function eta(mins: number) {
+		if (mins <= 0) return 'departing now';
+		if (mins < 60) return `in ${mins} min`;
+		const h = Math.floor(mins / 60);
+		return `in ${h} h ${mins % 60} min`;
+	}
+
+	function render() {
+		const now = torontoNow();
+		for (const el of document.querySelectorAll<HTMLElement>('#go-train .dir')) {
+			const list = upcoming(el.dataset.dir as keyof Day, now);
+			const q = (role: string) => el.querySelector<HTMLElement>(`[data-role="${role}"]`)!;
+			const first = list[0];
+			if (!first) {
+				q('next').textContent = 'No trains';
+				q('eta').textContent = 'Schedule ends soon, check back later';
+				q('then').textContent = '';
+				continue;
+			}
+			q('next').textContent = clock(first.train.dep);
+			q('eta').textContent = `${eta(first.dep - now.minutes)} · arrives ${clock(first.train.arr)}`;
+			q('then').textContent = list[1] ? `Then ${clock(list[1].train.dep)}` : '';
+		}
+	}
+
+	render();
+	setInterval(render, 15_000);
+</script>
+
+<style>
+	.tile {
+		background: var(--card);
+		border: 1px solid var(--line);
+		border-radius: 1.25rem;
+		padding: 1.25rem 1.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	header {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	h2 {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+	.sub,
+	footer {
+		color: var(--muted);
+		font-size: 0.8rem;
+	}
+	.dirs {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 1rem;
+	}
+	.dir {
+		background: var(--bg);
+		border-radius: 0.9rem;
+		padding: 1rem 1.1rem;
+	}
+	.route {
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+	.route span {
+		color: var(--go);
+	}
+	.next {
+		font-size: clamp(1.9rem, 5vw, 2.4rem);
+		font-weight: 650;
+		letter-spacing: -0.02em;
+		line-height: 1.2;
+		margin: 0.25rem 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.eta {
+		font-size: 0.9rem;
+	}
+	.then {
+		margin-top: 0.4rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+</style>
