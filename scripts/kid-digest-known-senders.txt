@@ -4,3 +4,17 @@
 # the "From" header. Lines starting with # are comments. Safe to edit directly on
 # GitHub or via a normal commit -- this file is read fresh from the repo checkout
 # on every run, no image rebuild needed.
+
+yrdsb.ca                # York Region District School Board
+schoolcashonline.com    # school payments
+oxfordlearning.com      # tutoring
+oxfordlearningnews.com
+hockeyhero.co           # hockey gear/registration
+tacsports.ca            # tennis
+ntrcanada.com           # ice/hockey training
+richmondhillhockey.com
+jumpbasketball.ca
+spiritofmath.com        # math enrichment
+msorangeart.ca          # art class
+hubclimbing.com         # climbing
+terryfox.org            # Terry Fox Run
