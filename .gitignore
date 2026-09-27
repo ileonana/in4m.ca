@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 # python venv for scripts/
 .venv/
+.envrc
+__pycache__/
+*.pyc

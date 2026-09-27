@@ -1,0 +1,275 @@
+---
+import enc from '../data/son.enc.json';
+---
+
+<section class="tile kid" id="kid" aria-labelledby="kid-title">
+	<h2 class="group-title" id="kid-title">Kid</h2>
+
+	<form class="unlock" data-role="unlock">
+		<input type="password" data-role="password" placeholder="Passphrase" aria-label="Passphrase" autocomplete="off" />
+		<button type="submit">Unlock</button>
+		<div class="error" data-role="error"></div>
+	</form>
+
+	<ol class="events" data-role="events" hidden></ol>
+	<p class="empty" data-role="empty" hidden>No upcoming events</p>
+
+	<footer data-role="updated" hidden></footer>
+
+	<script type="application/json" id="kid-enc" set:html={JSON.stringify(enc)} />
+</section>
+
+<script>
+	type Enc = { salt: string; iv: string; iterations: number; ciphertext: string };
+	type Event = {
+		title: string;
+		date: string;
+		time: string | null;
+		category: 'school' | 'activity';
+		description: string | null;
+		links: string[];
+	};
+	type Payload = { generated: string; events: Event[] };
+
+	const STORAGE_KEY = 'kid-passphrase';
+	const enc: Enc = JSON.parse(document.getElementById('kid-enc')!.textContent!);
+	const root = document.getElementById('kid')!;
+	const unlockForm = root.querySelector<HTMLFormElement>('[data-role="unlock"]')!;
+	const passwordInput = root.querySelector<HTMLInputElement>('[data-role="password"]')!;
+	const errorEl = root.querySelector<HTMLElement>('[data-role="error"]')!;
+	const eventsEl = root.querySelector<HTMLElement>('[data-role="events"]')!;
+	const emptyEl = root.querySelector<HTMLElement>('[data-role="empty"]')!;
+	const footerEl = root.querySelector<HTMLElement>('[data-role="updated"]')!;
+
+	function b64ToBytes(b64: string) {
+		return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+	}
+
+	async function decrypt(passphrase: string): Promise<Payload> {
+		const salt = b64ToBytes(enc.salt);
+		const iv = b64ToBytes(enc.iv);
+		const ciphertext = b64ToBytes(enc.ciphertext);
+		const baseKey = await crypto.subtle.importKey(
+			'raw',
+			new TextEncoder().encode(passphrase),
+			'PBKDF2',
+			false,
+			['deriveKey'],
+		);
+		const key = await crypto.subtle.deriveKey(
+			{ name: 'PBKDF2', salt, iterations: enc.iterations, hash: 'SHA-256' },
+			baseKey,
+			{ name: 'AES-GCM', length: 256 },
+			false,
+			['decrypt'],
+		);
+		const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+		return JSON.parse(new TextDecoder().decode(plaintext));
+	}
+
+	function clock(hhmm: string) {
+		const [h, m] = hhmm.split(':').map(Number);
+		const suffix = h >= 12 ? 'pm' : 'am';
+		return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${suffix}`;
+	}
+
+	function renderEvents(payload: Payload) {
+		unlockForm.hidden = true;
+		eventsEl.hidden = payload.events.length === 0;
+		emptyEl.hidden = payload.events.length !== 0;
+
+		eventsEl.replaceChildren(
+			...payload.events.map((e) => {
+				const li = document.createElement('li');
+				li.className = `cat-${e.category}`;
+
+				const when = document.createElement('div');
+				when.className = 'when';
+				const dateText = new Intl.DateTimeFormat('en-CA', {
+					month: 'short',
+					day: 'numeric',
+					weekday: 'short',
+				}).format(new Date(e.date + 'T00:00:00'));
+				when.append(e.time ? `${dateText} · ${clock(e.time)}` : dateText);
+				const tag = document.createElement('span');
+				tag.className = 'tag';
+				tag.textContent = e.category;
+				when.append(tag);
+
+				const title = document.createElement('div');
+				title.className = 'title';
+				title.textContent = e.title;
+
+				li.append(when, title);
+
+				if (e.description) {
+					const desc = document.createElement('div');
+					desc.className = 'desc';
+					desc.textContent = e.description;
+					li.append(desc);
+				}
+
+				const safeLinks = e.links.filter((l) => /^https:\/\//i.test(l));
+				if (safeLinks.length) {
+					const links = document.createElement('div');
+					links.className = 'links';
+					safeLinks.forEach((l, i) => {
+						if (i > 0) links.append(' · ');
+						links.append(
+							Object.assign(document.createElement('a'), {
+								href: l,
+								target: '_blank',
+								rel: 'noopener noreferrer',
+								textContent: `Link ${i + 1}`,
+							}),
+						);
+					});
+					li.append(links);
+				}
+				return li;
+			}),
+		);
+
+		const generated = new Date(payload.generated);
+		const when = new Intl.DateTimeFormat('en-CA', {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+		}).format(generated);
+		const stale = Date.now() - generated.getTime() > 4 * 3600_000; // hourly refresh + slack
+		footerEl.hidden = false;
+		footerEl.classList.toggle('stale', stale);
+		footerEl.textContent = stale ? `Couldn't refresh · last updated ${when}` : `Updated ${when}`;
+	}
+
+	async function tryUnlock(passphrase: string, remember: boolean) {
+		try {
+			const payload = await decrypt(passphrase);
+			if (remember) {
+				try {
+					localStorage.setItem(STORAGE_KEY, passphrase);
+				} catch {}
+			}
+			renderEvents(payload);
+		} catch {
+			errorEl.textContent = 'Wrong passphrase.';
+		}
+	}
+
+	unlockForm.addEventListener('submit', (ev) => {
+		ev.preventDefault();
+		errorEl.textContent = '';
+		tryUnlock(passwordInput.value, true);
+	});
+
+	const remembered = (() => {
+		try {
+			return localStorage.getItem(STORAGE_KEY);
+		} catch {
+			return null;
+		}
+	})();
+	if (remembered) tryUnlock(remembered, false);
+</script>
+
+<style>
+	.tile {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	.unlock {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.unlock input {
+		flex: 1;
+		min-width: 8rem;
+		padding: 0.55rem 0.75rem;
+		border-radius: 0.7rem;
+		border: 1px solid var(--line);
+		background: var(--inset);
+		color: var(--fg);
+		font: inherit;
+	}
+	.unlock button {
+		padding: 0.55rem 1rem;
+		border-radius: 0.7rem;
+		border: 1px solid var(--line);
+		background: var(--accent);
+		color: white;
+		font: inherit;
+		cursor: pointer;
+	}
+	.error {
+		flex-basis: 100%;
+		font-size: 0.75rem;
+		color: var(--danger);
+		min-height: 1em;
+	}
+	.events {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.events li {
+		padding: 0.6rem 0;
+	}
+	.events li + li {
+		border-top: 1px solid var(--line);
+	}
+	.when {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.tag {
+		font-size: 0.62rem;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		padding: 0.1rem 0.45rem;
+		border-radius: 999px;
+		background: var(--inset);
+	}
+	.cat-activity .tag {
+		color: var(--accent);
+	}
+	.title {
+		margin-top: 0.15rem;
+		font-size: 0.95rem;
+	}
+	.desc {
+		margin-top: 0.2rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.links {
+		margin-top: 0.3rem;
+		font-size: 0.78rem;
+	}
+	.links a:hover {
+		color: var(--accent);
+	}
+	.empty {
+		color: var(--muted);
+		font-size: 0.85rem;
+		margin: 0;
+	}
+	footer {
+		margin-top: auto;
+		font-size: 0.68rem;
+		letter-spacing: 0.04em;
+		color: var(--muted);
+		opacity: 0.85;
+	}
+	footer.stale {
+		color: var(--danger);
+		opacity: 1;
+	}
+</style>

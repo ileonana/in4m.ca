@@ -1,10 +1,12 @@
 [project]
 name = "website-scripts"
 version = "0.1.0"
-description = "Python helper scripts for the website (photo import)"
+description = "Python helper scripts for the website (photo import, GO schedule, kid digest)"
 requires-python = ">=3.14"
 dependencies = [
     "pillow",
     "pillow-heif",
     "rawpy",
+    "cryptography",
+    "openai",
 ]
