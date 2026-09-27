@@ -46,6 +46,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.header import decode_header
 from pathlib import Path
 
+import pymupdf
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -60,12 +61,18 @@ ACCOUNTS = [a.strip() for a in os.environ.get("KID_DIGEST_ACCOUNTS", "lawrence,w
 INITIAL_DAYS = int(os.environ.get("KID_DIGEST_INITIAL_DAYS", "14"))
 
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+# deepseek-flash is the current vision-capable model (needed for the PDF-attachment
+# best-effort path below) -- verify this is still current against DeepSeek's docs
+# periodically, since model IDs and capabilities have moved before.
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
 
 PBKDF2_ITERATIONS = 600_000
 IMAP_HOST = "imap.gmail.com"
 CLASSIFY_BATCH = 20
 BODY_CHAR_CAP = 6000
+MAX_PDF_ATTACHMENTS_PER_EMAIL = 2
+MAX_PDF_PAGES = 2
+PDF_RENDER_DPI = 150
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +152,33 @@ def clean_body(text: str) -> str:
     return "\n".join(lines).strip()[:BODY_CHAR_CAP]
 
 
-def extract_body_from_email(msg: email.message.Message) -> str:
+def render_pdf_pages(pdf_bytes: bytes) -> list[str]:
+    """Best-effort: render the first few pages of a PDF attachment to base64 PNG data
+    URLs, for the vision-capable model to read directly. Returns [] on any failure
+    (corrupt PDF, unsupported content, etc.) -- attachment reading is a bonus, never
+    something that should break the run."""
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        images = []
+        for page in doc[:MAX_PDF_PAGES]:
+            pix = page.get_pixmap(dpi=PDF_RENDER_DPI)
+            images.append(f"data:image/png;base64,{base64.b64encode(pix.tobytes('png')).decode()}")
+        return images
+    except Exception as e:
+        print(f"PDF render failed, skipping attachment: {e}", file=sys.stderr)
+        return []
+
+
+def extract_body_from_email(msg: email.message.Message) -> tuple[str, list[str]]:
     plain, html_text = None, None
+    images: list[str] = []
     parts = msg.walk() if msg.is_multipart() else [msg]
     for part in parts:
         if part.get_content_disposition() == "attachment":
+            if part.get_content_type() == "application/pdf" and len(images) < MAX_PDF_ATTACHMENTS_PER_EMAIL * MAX_PDF_PAGES:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    images.extend(render_pdf_pages(payload))
             continue
         charset = part.get_content_charset() or "utf-8"
         if plain is None and part.get_content_type() == "text/plain":
@@ -160,15 +189,16 @@ def extract_body_from_email(msg: email.message.Message) -> str:
             payload = part.get_payload(decode=True)
             if payload:
                 html_text = strip_html(payload.decode(charset, "replace"))
-    return clean_body(plain or html_text or "")
+    return clean_body(plain or html_text or ""), images
 
 
-def fetch_body(conn: imaplib.IMAP4_SSL, uid: str) -> str:
+def fetch_body(conn: imaplib.IMAP4_SSL, uid: str) -> dict:
     status, data = conn.uid("fetch", uid, "(BODY.PEEK[])")
     if status != "OK" or not data or not isinstance(data[0], tuple):
-        return ""
+        return {"body": "", "images": []}
     msg = email.message_from_bytes(data[0][1])
-    return extract_body_from_email(msg)
+    body, images = extract_body_from_email(msg)
+    return {"body": body, "images": images}
 
 
 # ---------------------------------------------------------------------------
@@ -201,35 +231,68 @@ def classify_batch(client: OpenAI, items: list[dict]) -> set[str]:
     return {items[i]["id"] for i in indices if 0 <= i < len(items)}
 
 
-def extract_events(client: OpenAI, bodies: list[dict], existing_events: list[dict]) -> list[dict]:
-    """bodies: [{id, subject, body}]. Returns a list of {action, match_id, title, date, time,
-    category, description, links} where action is 'add' | 'update' | 'cancel'."""
+def _extraction_instructions(existing_events: list[dict]) -> str:
     existing_summary = [
         {"id": e["id"], "title": e["title"], "date": e["date"]} for e in existing_events if e["status"] == "active"
     ]
-    emails_blob = "\n\n".join(
-        f"--- Email (id={b['id']}, subject: {b['subject']!r}) ---\n{b['body']}" for b in bodies
-    )
-    prompt = (
+    return (
         f"You're extracting calendar events about {KID_NAME} from parent email for a family dashboard.\n"
         f"Known upcoming events already on record: {json.dumps(existing_summary)}\n\n"
-        "For each event you find in the emails below, decide:\n"
+        "For each event you find in the emails (and any attached images/scanned pages) below, decide:\n"
         "- action 'add' for a new event not already on record\n"
         "- action 'update' with match_id set to an existing event's id, if this email adds detail to "
         "  or corrects/reschedules something already known\n"
         "- action 'cancel' with match_id set, if this email says an existing event is cancelled/off\n"
         "Only extract events with a specific date. Ignore vague future mentions. If multiple emails "
         "describe the same event, merge them into one entry preferring the most recent details.\n\n"
-        f"{emails_blob}\n\n"
-        'Respond as JSON: {"events": [{"action": "add", "match_id": null, "title": "...", '
-        '"date": "YYYY-MM-DD", "time": "HH:MM" or null, "category": "school" or "activity", '
-        '"description": "..." or null, "links": ["..."]}]}'
     )
-    resp = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
+
+
+def _extraction_content(bodies: list[dict], existing_events: list[dict], include_images: bool) -> list[dict]:
+    content = [{"type": "text", "text": _extraction_instructions(existing_events)}]
+    for b in bodies:
+        content.append({"type": "text", "text": f"--- Email (id={b['id']}, subject: {b['subject']!r}) ---\n{b['body']}"})
+        if include_images:
+            for img in b.get("images", []):
+                content.append({"type": "image_url", "image_url": {"url": img}})
+    content.append(
+        {
+            "type": "text",
+            "text": (
+                'Respond as JSON: {"events": [{"action": "add", "match_id": null, "title": "...", '
+                '"date": "YYYY-MM-DD", "time": "HH:MM" or null, "category": "school" or "activity", '
+                '"description": "..." or null, "links": ["..."]}]}'
+            ),
+        }
     )
+    return content
+
+
+def extract_events(client: OpenAI, bodies: list[dict], existing_events: list[dict]) -> list[dict]:
+    """bodies: [{id, subject, body, images}]. Returns a list of {action, match_id, title, date,
+    time, category, description, links} where action is 'add' | 'update' | 'cancel'.
+
+    Attached PDF pages (rendered as images) are sent alongside the text on a best-effort
+    basis -- if the model/request rejects the images for any reason, we fall back to a
+    text-only call rather than losing the whole batch."""
+    has_images = any(b.get("images") for b in bodies)
+    try:
+        content = _extraction_content(bodies, existing_events, include_images=has_images)
+        resp = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": content}],
+            response_format={"type": "json_object"},
+        )
+    except Exception as e:
+        if not has_images:
+            raise
+        print(f"Extraction with attachment images failed ({e}); retrying text-only.", file=sys.stderr)
+        content = _extraction_content(bodies, existing_events, include_images=False)
+        resp = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": content}],
+            response_format={"type": "json_object"},
+        )
     result = json.loads(resp.choices[0].message.content)
     return result.get("events", [])
 
@@ -376,7 +439,7 @@ def run(dry_run: bool):
 
             if relevant_ids:
                 bodies = [
-                    {"id": m["id"], "subject": m["subject"], "body": fetch_body(conn, m["id"])}
+                    {"id": m["id"], "subject": m["subject"], **fetch_body(conn, m["id"])}
                     for m in meta
                     if m["id"] in relevant_ids
                 ]

@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git openssh-cli
 
 RUN pip install --no-cache-dir \
     cryptography \
-    openai
+    openai \
+    pymupdf
 
 WORKDIR /repo
 
