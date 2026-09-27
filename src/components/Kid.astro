@@ -6,7 +6,16 @@ import enc from '../data/son.enc.json';
 	<h2 class="group-title" id="kid-title">Kid</h2>
 
 	<form class="unlock" data-role="unlock">
-		<input type="password" data-role="password" placeholder="Passphrase" aria-label="Passphrase" autocomplete="off" />
+		<input
+			type="password"
+			data-role="password"
+			placeholder="Passphrase"
+			aria-label="Passphrase"
+			autocomplete="current-password"
+			autocapitalize="off"
+			autocorrect="off"
+			spellcheck="false"
+		/>
 		<button type="submit">Unlock</button>
 		<div class="error" data-role="error"></div>
 	</form>
