@@ -1,0 +1,135 @@
+---
+// Wikipedia "On this day": a few events for today's Toronto date, stable for the whole day.
+---
+
+<section class="tile otd" id="otd" aria-labelledby="otd-title">
+	<h2 class="group-title" id="otd-title">On this day <span class="src" data-role="date">Wikipedia</span></h2>
+	<ul class="list" data-role="list"><li class="empty">Loading…</li></ul>
+</section>
+
+<script>
+	const CACHE_KEY = 'otd-v1';
+	const COUNT = 3;
+
+	type Ev = { text: string; year: number; pages?: { titles: { canonical: string } }[] };
+	type Cached = { key: string; events: Ev[] };
+
+	const root = document.getElementById('otd')!;
+	const list = root.querySelector<HTMLElement>('[data-role="list"]')!;
+
+	const p = Object.fromEntries(
+		new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' })
+			.formatToParts(new Date())
+			.map((x) => [x.type, x.value]),
+	);
+	const key = `${p.month}/${p.day}`;
+	root.querySelector<HTMLElement>('[data-role="date"]')!.textContent = new Date(
+		Date.UTC(+p.year, +p.month - 1, +p.day),
+	).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', day: 'numeric' });
+
+	// Same picks all day: spread evenly through the list, offset by the day of month.
+	function pick(events: Ev[]) {
+		const ok = events.filter((e) => e.text.length <= 220);
+		const pool = ok.length >= COUNT ? ok : events;
+		const step = Math.floor(pool.length / COUNT) || 1;
+		return Array.from({ length: Math.min(COUNT, pool.length) }, (_, i) => pool[(i * step + +p.day) % pool.length]).sort(
+			(a, b) => a.year - b.year,
+		);
+	}
+
+	function render(events: Ev[]) {
+		list.replaceChildren(
+			...events.map((e) => {
+				const li = document.createElement('li');
+				const year = Object.assign(document.createElement('span'), { className: 'year num', textContent: String(e.year) });
+				const title = e.pages?.[0]?.titles.canonical;
+				const body = title
+					? Object.assign(document.createElement('a'), {
+							href: `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+							target: '_blank',
+							rel: 'noopener noreferrer',
+							textContent: e.text,
+						})
+					: Object.assign(document.createElement('span'), { textContent: e.text });
+				body.classList.add('text');
+				li.append(year, body);
+				return li;
+			}),
+		);
+	}
+
+	async function load() {
+		try {
+			const c: Cached | null = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null');
+			if (c?.key === key) return render(c.events);
+		} catch {}
+		try {
+			const res = await fetch(`https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${key}`);
+			if (!res.ok) throw new Error(String(res.status));
+			const events = pick((await res.json()).events as Ev[]);
+			try {
+				localStorage.setItem(CACHE_KEY, JSON.stringify({ key, events }));
+			} catch {}
+			render(events);
+		} catch {
+			list.innerHTML = '<li class="empty">Unavailable</li>';
+		}
+	}
+
+	load();
+</script>
+
+<style>
+	.tile {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	.group-title {
+		margin: 0;
+	}
+	.src {
+		margin-left: auto;
+		font-weight: 400;
+		letter-spacing: 0.04em;
+		text-transform: none;
+		color: var(--muted);
+	}
+	.list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.list :global(li) {
+		padding: 0.7rem 0;
+	}
+	.list :global(li:first-child) {
+		padding-top: 0;
+	}
+	.list :global(li + li) {
+		border-top: 1px solid var(--line);
+	}
+	.list :global(.year) {
+		display: block;
+		font-size: 1.15rem;
+		color: var(--accent);
+		margin-bottom: 0.15rem;
+	}
+	.list :global(.text) {
+		display: -webkit-box;
+		-webkit-line-clamp: 4;
+		line-clamp: 4;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		font-size: 0.85rem;
+		line-height: 1.45;
+		text-decoration: none;
+	}
+	.list :global(a.text:hover) {
+		color: var(--accent);
+	}
+	.list :global(li.empty) {
+		color: var(--muted);
+		font-size: 0.85rem;
+	}
+</style>

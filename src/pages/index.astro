@@ -3,6 +3,9 @@ import Base from '../layouts/Base.astro';
 import Clock from '../components/Clock.astro';
 import Weather from '../components/Weather.astro';
 import GoTrain from '../components/GoTrain.astro';
+import Finance from '../components/Finance.astro';
+import HackerNews from '../components/HackerNews.astro';
+import OnThisDay from '../components/OnThisDay.astro';
 
 const title = 'in4m · Dashboard';
 const description = 'A personal dashboard: time, weather and the GO train, at a glance.';
@@ -19,6 +22,9 @@ const description = 'A personal dashboard: time, weather and the GO train, at a 
 		<div class="span-all"><Clock /></div>
 		<div class="span-all"><Weather /></div>
 		<div class="span-all"><GoTrain /></div>
+		<div><Finance /></div>
+		<div><HackerNews /></div>
+		<div><OnThisDay /></div>
 	</main>
 </Base>
 
