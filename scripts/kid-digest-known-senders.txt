@@ -1,0 +1,6 @@
+# Senders whose email is always treated as relevant to kid-digest.py, skipping
+# the AI classification step entirely (still goes through structured extraction).
+# One domain or email address per line, case-insensitive substring match against
+# the "From" header. Lines starting with # are comments. Safe to edit directly on
+# GitHub or via a normal commit -- this file is read fresh from the repo checkout
+# on every run, no image rebuild needed.

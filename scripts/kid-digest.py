@@ -54,6 +54,7 @@ from openai import OpenAI
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT = REPO_ROOT / "src" / "data" / "son.enc.json"
+KNOWN_SENDERS_PATH = REPO_ROOT / "scripts" / "kid-digest-known-senders.txt"
 STATE_PATH = Path(os.environ.get("KID_DIGEST_STATE", str(Path.home() / "kid-digest" / "state.json")))
 
 KID_NAME = os.environ.get("KID_NAME", "my son")
@@ -100,6 +101,17 @@ def list_new_uids(conn: imaplib.IMAP4_SSL, since: datetime, processed_ids: set[s
 def decode_mime_header(value: str) -> str:
     parts = decode_header(value or "")
     return "".join(p.decode(enc or "utf-8", "replace") if isinstance(p, bytes) else p for p, enc in parts)
+
+
+def load_known_senders() -> list[str]:
+    if not KNOWN_SENDERS_PATH.exists():
+        return []
+    senders = []
+    for line in KNOWN_SENDERS_PATH.read_text().splitlines():
+        entry = line.split("#", 1)[0].strip().lower()
+        if entry:
+            senders.append(entry)
+    return senders
 
 
 def fetch_headers(conn: imaplib.IMAP4_SSL, uid: str) -> dict:
@@ -217,7 +229,12 @@ def classify_batch(client: OpenAI, items: list[dict]) -> set[str]:
         f"Emails below are numbered 0..{len(items) - 1}. Return the indices that are about "
         f"{KID_NAME}'s school (announcements, field trips, PD days, permission forms) or "
         f"{KID_NAME}'s afterschool/extracurricular activities (lessons, sports, camps, clubs). "
-        "Ignore unrelated personal, work, or promotional email.\n\n"
+        "Relevant email may be in any language, including Chinese -- watch for terms like "
+        "请假 (leave/absence request), 补课 (makeup class), 缺课 (absent from class), "
+        "停课 (class cancelled), 提前放学 (early dismissal), 家长会 (parent meeting), as well as "
+        "their English equivalents. When uncertain whether an email is relevant, err on the "
+        "side of including it -- a later step discards anything that isn't a real event. Ignore "
+        "obviously unrelated personal, work, or promotional email.\n\n"
         f"{numbered}\n\n"
         'Respond as JSON: {"relevant_indices": [0, 2, ...]}'
     )
@@ -413,6 +430,7 @@ def publish():
 def run(dry_run: bool):
     state = load_state()
     client = deepseek_client()
+    known_senders = load_known_senders()
     now = datetime.now(timezone.utc)
 
     for account in ACCOUNTS:
@@ -433,9 +451,10 @@ def run(dry_run: bool):
                 continue
 
             meta = [fetch_headers(conn, uid) for uid in new_ids]
-            relevant_ids = set()
-            for i in range(0, len(meta), CLASSIFY_BATCH):
-                relevant_ids |= classify_batch(client, meta[i : i + CLASSIFY_BATCH])
+            relevant_ids = {m["id"] for m in meta if any(s in m["from"].lower() for s in known_senders)}
+            to_classify = [m for m in meta if m["id"] not in relevant_ids]
+            for i in range(0, len(to_classify), CLASSIFY_BATCH):
+                relevant_ids |= classify_batch(client, to_classify[i : i + CLASSIFY_BATCH])
 
             if relevant_ids:
                 bodies = [
