@@ -146,7 +146,7 @@ import enc from '../data/son.enc.json';
 			hour: 'numeric',
 			minute: '2-digit',
 		}).format(generated);
-		const stale = Date.now() - generated.getTime() > 4 * 3600_000; // hourly refresh + slack
+		const stale = Date.now() - generated.getTime() > 30 * 3600_000; // daily refresh + slack
 		footerEl.hidden = false;
 		footerEl.classList.toggle('stale', stale);
 		footerEl.textContent = stale ? `Couldn't refresh · last updated ${when}` : `Updated ${when}`;
