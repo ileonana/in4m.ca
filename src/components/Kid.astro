@@ -92,30 +92,42 @@ import enc from '../data/son.enc.json';
 				const li = document.createElement('li');
 				li.className = `cat-${e.category}`;
 
-				const when = document.createElement('div');
-				when.className = 'when';
-				const dateText = new Intl.DateTimeFormat('en-CA', {
-					month: 'short',
-					day: 'numeric',
-					weekday: 'short',
-				}).format(new Date(e.date + 'T00:00:00'));
-				when.append(e.time ? `${dateText} · ${clock(e.time)}` : dateText);
-				const tag = document.createElement('span');
-				tag.className = 'tag';
-				tag.textContent = e.category;
-				when.append(tag);
+				const date = new Date(e.date + 'T00:00:00');
+				const dateEl = document.createElement('div');
+				dateEl.className = 'date';
+				const dEl = document.createElement('span');
+				dEl.className = 'd';
+				dEl.textContent = new Intl.DateTimeFormat('en-CA', { day: 'numeric' }).format(date);
+				const mEl = document.createElement('span');
+				mEl.className = 'm';
+				mEl.textContent = new Intl.DateTimeFormat('en-CA', { month: 'short' }).format(date);
+				dateEl.append(dEl, mEl);
 
-				const title = document.createElement('div');
-				title.className = 'title';
-				title.textContent = e.title;
+				const body = document.createElement('div');
+				body.className = 'body';
 
-				li.append(when, title);
+				const titleRow = document.createElement('div');
+				titleRow.className = 'title-row';
+				const titleEl = document.createElement('span');
+				titleEl.className = 'title';
+				titleEl.textContent = e.title;
+				const tagEl = document.createElement('span');
+				tagEl.className = 'tag';
+				tagEl.textContent = e.category;
+				titleRow.append(titleEl, tagEl);
+
+				const metaEl = document.createElement('div');
+				metaEl.className = 'meta';
+				const weekday = new Intl.DateTimeFormat('en-CA', { weekday: 'short' }).format(date);
+				metaEl.textContent = e.time ? `${weekday} · ${clock(e.time)}` : weekday;
+
+				body.append(titleRow, metaEl);
 
 				if (e.description) {
 					const desc = document.createElement('div');
 					desc.className = 'desc';
 					desc.textContent = e.description;
-					li.append(desc);
+					body.append(desc);
 				}
 
 				const safeLinks = e.links.filter((l) => /^https:\/\//i.test(l));
@@ -133,8 +145,10 @@ import enc from '../data/son.enc.json';
 							}),
 						);
 					});
-					li.append(links);
+					body.append(links);
 				}
+
+				li.append(dateEl, body);
 				return li;
 			}),
 		);
@@ -225,42 +239,77 @@ import enc from '../data/son.enc.json';
 		padding: 0;
 	}
 	.events li {
-		padding: 0.6rem 0;
+		display: grid;
+		grid-template-columns: 2.75rem minmax(0, 1fr);
+		gap: 0.85rem;
+		padding: 0.65rem 0;
 	}
 	.events li + li {
 		border-top: 1px solid var(--line);
 	}
-	.when {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		color: var(--muted);
+	.date {
+		text-align: center;
+		line-height: 1.15;
+		padding-top: 0.1rem;
 	}
-	.tag {
+	.date .d {
+		display: block;
+		font-size: 1.15rem;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+	}
+	.date .m {
+		display: block;
 		font-size: 0.62rem;
 		font-weight: 500;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
-		padding: 0.1rem 0.45rem;
-		border-radius: 999px;
-		background: var(--inset);
+		color: var(--muted);
+	}
+	.title-row {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+	}
+	.title {
+		font-size: 0.9rem;
+		font-weight: 500;
+		min-width: 0;
+	}
+	.tag {
+		margin-left: auto;
+		flex-shrink: 0;
+		font-size: 0.6rem;
+		font-weight: 600;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--muted);
 	}
 	.cat-activity .tag {
 		color: var(--accent);
 	}
-	.title {
-		margin-top: 0.15rem;
-		font-size: 0.95rem;
+	.cat-school .tag {
+		color: var(--warn);
 	}
-	.desc {
-		margin-top: 0.2rem;
-		font-size: 0.8rem;
+	.meta {
+		margin-top: 0.15rem;
+		font-size: 0.75rem;
 		color: var(--muted);
 	}
-	.links {
+	.desc {
 		margin-top: 0.3rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+		line-height: 1.45;
+	}
+	.links {
+		margin-top: 0.4rem;
 		font-size: 0.78rem;
+	}
+	.links a {
+		text-decoration: underline;
+		text-decoration-color: var(--line);
+		text-underline-offset: 2px;
 	}
 	.links a:hover {
 		color: var(--accent);
