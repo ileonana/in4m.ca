@@ -208,6 +208,9 @@ import enc from '../data/son.enc.json';
 		align-items: center;
 		gap: 0.6rem;
 	}
+	.unlock[hidden] {
+		display: none;
+	}
 	.unlock input {
 		flex: 1;
 		min-width: 8rem;
@@ -238,27 +241,27 @@ import enc from '../data/son.enc.json';
 		margin: 0;
 		padding: 0;
 	}
-	.events li {
+	.events :global(li) {
 		display: grid;
 		grid-template-columns: 2.75rem minmax(0, 1fr);
 		gap: 0.85rem;
 		padding: 0.65rem 0;
 	}
-	.events li + li {
+	.events :global(li + li) {
 		border-top: 1px solid var(--line);
 	}
-	.date {
+	.events :global(.date) {
 		text-align: center;
 		line-height: 1.15;
 		padding-top: 0.1rem;
 	}
-	.date .d {
+	.events :global(.date .d) {
 		display: block;
 		font-size: 1.15rem;
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
 	}
-	.date .m {
+	.events :global(.date .m) {
 		display: block;
 		font-size: 0.62rem;
 		font-weight: 500;
@@ -266,17 +269,17 @@ import enc from '../data/son.enc.json';
 		text-transform: uppercase;
 		color: var(--muted);
 	}
-	.title-row {
+	.events :global(.title-row) {
 		display: flex;
 		align-items: baseline;
 		gap: 0.6rem;
 	}
-	.title {
+	.events :global(.title) {
 		font-size: 0.9rem;
 		font-weight: 500;
 		min-width: 0;
 	}
-	.tag {
+	.events :global(.tag) {
 		margin-left: auto;
 		flex-shrink: 0;
 		font-size: 0.6rem;
@@ -285,33 +288,33 @@ import enc from '../data/son.enc.json';
 		text-transform: uppercase;
 		color: var(--muted);
 	}
-	.cat-activity .tag {
+	.events :global(.cat-activity .tag) {
 		color: var(--accent);
 	}
-	.cat-school .tag {
+	.events :global(.cat-school .tag) {
 		color: var(--warn);
 	}
-	.meta {
+	.events :global(.meta) {
 		margin-top: 0.15rem;
 		font-size: 0.75rem;
 		color: var(--muted);
 	}
-	.desc {
+	.events :global(.desc) {
 		margin-top: 0.3rem;
 		font-size: 0.8rem;
 		color: var(--muted);
 		line-height: 1.45;
 	}
-	.links {
+	.events :global(.links) {
 		margin-top: 0.4rem;
 		font-size: 0.78rem;
 	}
-	.links a {
+	.events :global(.links a) {
 		text-decoration: underline;
 		text-decoration-color: var(--line);
 		text-underline-offset: 2px;
 	}
-	.links a:hover {
+	.events :global(.links a:hover) {
 		color: var(--accent);
 	}
 	.empty {
