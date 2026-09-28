@@ -2,7 +2,7 @@
 import { Solar } from 'lunar-javascript';
 
 // 黄历 宜/忌 for each day (China date), computed at build time so the client ships no library.
-// The weekly deploy keeps this window rolling forward.
+// The daily deploy keeps this window rolling forward.
 const DAYS = 200; // longest gap between 诸事不宜 days is ~116
 const shanghai = new Intl.DateTimeFormat('en-CA', {
 	timeZone: 'Asia/Shanghai',

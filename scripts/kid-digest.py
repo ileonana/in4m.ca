@@ -4,8 +4,9 @@ Runs on the NAS (Synology Task Scheduler, hourly) -- never in CI. Reads new mail
 two Gmail accounts over IMAP, asks DeepSeek to classify which messages are about the
 kid's school or extracurricular activities, extracts structured events from the relevant
 ones, merges them into a private local state file, encrypts the current upcoming-events
-list, and (if it changed) commits + pushes it so the existing GitHub Pages workflow
-redeploys.
+list, and commits + pushes it so the existing GitHub Pages workflow redeploys. Every run
+publishes: the ciphertext is re-randomised each time and carries a "generated" timestamp
+that the page uses to flag a stalled pipeline, so the daily commit doubles as a heartbeat.
 
 Each Gmail account needs 2-Step Verification enabled, plus a 16-character App Password
 generated at https://myaccount.google.com/apppasswords -- no Google Cloud project or
@@ -39,6 +40,7 @@ import html.parser
 import imaplib
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -245,7 +247,7 @@ def classify_batch(client: OpenAI, items: list[dict]) -> set[str]:
     )
     result = json.loads(resp.choices[0].message.content)
     indices = result.get("relevant_indices", [])
-    return {items[i]["id"] for i in indices if 0 <= i < len(items)}
+    return {items[i]["id"] for i in indices if isinstance(i, int) and 0 <= i < len(items)}
 
 
 def _extraction_instructions(existing_events: list[dict]) -> str:
@@ -311,7 +313,8 @@ def extract_events(client: OpenAI, bodies: list[dict], existing_events: list[dic
             response_format={"type": "json_object"},
         )
     result = json.loads(resp.choices[0].message.content)
-    return result.get("events", [])
+    events = result.get("events", [])
+    return events if isinstance(events, list) else []
 
 
 # ---------------------------------------------------------------------------
@@ -330,39 +333,61 @@ def save_state(state: dict):
     STATE_PATH.write_text(json.dumps(state, indent=2))
 
 
+def normalize_event(item: dict, default_category: str = "school") -> dict | None:
+    """Validate one model-produced event. Returns clean fields, or None if it has no usable
+    title/date -- the model's output is untrusted, and one malformed item must not abort the
+    whole run (which would leave the source email unprocessed and retried forever)."""
+    if not isinstance(item, dict):
+        return None
+    title = item.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    try:
+        day = date.fromisoformat(str(item.get("date")))
+    except ValueError:
+        return None
+    time = item.get("time")
+    hm = re.fullmatch(r"(\d{1,2}):([0-5]\d)", time.strip()) if isinstance(time, str) else None
+    time = f"{int(hm[1]):02d}:{hm[2]}" if hm and int(hm[1]) < 24 else None
+    category = item.get("category")
+    if category not in ("school", "activity"):
+        category = default_category
+    description = item.get("description")
+    links = item.get("links")
+    return {
+        "title": title.strip(),
+        "date": day.isoformat(),
+        "time": time,
+        "category": category,
+        "description": description if isinstance(description, str) and description.strip() else None,
+        "links": [l for l in links if isinstance(l, str)] if isinstance(links, list) else [],
+    }
+
+
 def merge_extracted(state: dict, extracted: list[dict], source_ids: list[str]):
     by_id = {e["id"]: e for e in state["events"]}
     for item in extracted:
+        if not isinstance(item, dict):
+            print(f"Skipping malformed extracted item: {item!r}", file=sys.stderr)
+            continue
         action = item.get("action", "add")
         match = by_id.get(item.get("match_id"))
-        if action in ("update", "cancel") and match:
-            match["sourceMessageIds"] = sorted(set(match["sourceMessageIds"]) | set(source_ids))
-            if action == "cancel":
+        if action == "cancel":
+            # A cancel that matches nothing on record has nothing to cancel -- never turn it into an event.
+            if match:
+                match["sourceMessageIds"] = sorted(set(match["sourceMessageIds"]) | set(source_ids))
                 match["status"] = "cancelled"
-                continue
-            match.update(
-                {
-                    "title": item["title"],
-                    "date": item["date"],
-                    "time": item.get("time"),
-                    "category": item.get("category", match.get("category", "school")),
-                    "description": item.get("description"),
-                    "links": item.get("links", []),
-                }
-            )
+            continue
+        fields = normalize_event(item, default_category=match["category"] if match else "school")
+        if fields is None:
+            print(f"Skipping event without a valid title/date: {item!r}", file=sys.stderr)
+            continue
+        if action == "update" and match:
+            match["sourceMessageIds"] = sorted(set(match["sourceMessageIds"]) | set(source_ids))
+            match.update(fields)
         else:
             new_id = f"evt_{uuid.uuid4().hex[:8]}"
-            event = {
-                "id": new_id,
-                "title": item["title"],
-                "date": item["date"],
-                "time": item.get("time"),
-                "category": item.get("category", "school"),
-                "description": item.get("description"),
-                "links": item.get("links", []),
-                "status": "active",
-                "sourceMessageIds": list(source_ids),
-            }
+            event = {"id": new_id, **fields, "status": "active", "sourceMessageIds": list(source_ids)}
             state["events"].append(event)
             by_id[new_id] = event
 
@@ -418,6 +443,13 @@ def publish():
     )
     subprocess.run(["git", "add", rel], cwd=REPO_ROOT, check=True)
     subprocess.run(["git", "commit", "-m", "Refresh kid dashboard"], cwd=REPO_ROOT, check=True, env=env)
+    # Commits pushed from elsewhere (e.g. the laptop) would make a plain push non-fast-forward.
+    # Rebase our commit on top of them first; if that can't be done cleanly, leave the checkout
+    # as it was rather than stuck mid-rebase.
+    rebase = subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=REPO_ROOT, env=env)
+    if rebase.returncode != 0:
+        subprocess.run(["git", "rebase", "--abort"], cwd=REPO_ROOT)
+        raise RuntimeError("git pull --rebase failed; resolve the NAS checkout by hand")
     subprocess.run(["git", "push", "origin", "main"], cwd=REPO_ROOT, check=True)
     print("Pushed updated son.enc.json.", file=sys.stderr)
 
