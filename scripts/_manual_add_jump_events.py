@@ -1,39 +1,25 @@
 """One-off: add the 9 weekly JUMP Basketball sessions from the forwarded order
 confirmation (Order #162792, too old for the pipeline's incremental IMAP sync)
-to state.json, then regenerate son.enc.json the same way kid-digest.py's
-public_payload/encrypt_payload does.
+to state.json. Only touches state.json -- the next normal kid-digest.py run
+(Task Scheduler, in Docker) will pick these up and encrypt+publish them as
+usual, since it always regenerates son.enc.json from the full state on every
+run, not just from newly-extracted events.
 
-Run on the NAS from the repo checkout, after `git pull`:
+Run directly on the NAS host, no git/Docker needed for this step:
 
-    python3 scripts/_manual_add_jump_events.py
+    python3 _manual_add_jump_events.py
 
-Delete this file (and commit the deletion) once it's been run -- it's a
-one-off, not part of the regular pipeline.
+Then delete this file. To publish immediately instead of waiting for the
+next scheduled run, trigger the kid-digest Task Scheduler job manually from
+DSM (Control Panel > Task Scheduler > kid-digest > Run).
 """
 
-import base64
 import json
-import os
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-BASE = REPO_ROOT.parent
-STATE_PATH = BASE / "state" / "state.json"
-ENV_PATH = BASE / "kid-digest.env"
-OUT_PATH = REPO_ROOT / "src" / "data" / "son.enc.json"
-ITERS = 600_000
-
-passphrase = None
-for line in ENV_PATH.read_text().splitlines():
-    if line.startswith("KID_DIGEST_PASSPHRASE="):
-        passphrase = line.split("=", 1)[1].strip()
-assert passphrase, "KID_DIGEST_PASSPHRASE not found in " + str(ENV_PATH)
+STATE_PATH = Path("/volume1/docker/kid-digest/state/state.json")
 
 state = json.loads(STATE_PATH.read_text())
 
@@ -67,40 +53,5 @@ for i in range(9):
 state["events"].extend(new_events)
 STATE_PATH.write_text(json.dumps(state, indent=2))
 print("Added events:", len(new_events))
-
-today = date.today().isoformat()
-fields = ("title", "date", "time", "category", "description", "links")
-events = []
-for e in state["events"]:
-    if e["status"] == "active" and e["date"] >= today:
-        row = {}
-        for k in fields:
-            row[k] = e[k]
-        events.append(row)
-events.sort(key=lambda e: (e["date"], e["time"] or ""))
-
-now = datetime.now(timezone.utc)
-payload = {}
-payload["generated"] = now.isoformat(timespec="seconds")
-payload["events"] = events
-
-salt = os.urandom(16)
-iv = os.urandom(12)
-kdf = PBKDF2HMAC(
-    algorithm=hashes.SHA256(),
-    length=32,
-    salt=salt,
-    iterations=ITERS,
-)
-key = kdf.derive(passphrase.encode())
-plaintext = json.dumps(payload).encode()
-ciphertext = AESGCM(key).encrypt(iv, plaintext, None)
-
-out = {}
-out["salt"] = base64.b64encode(salt).decode()
-out["iv"] = base64.b64encode(iv).decode()
-out["iterations"] = ITERS
-out["ciphertext"] = base64.b64encode(ciphertext).decode()
-
-OUT_PATH.write_text(json.dumps(out, indent=2) + "\n")
-print("Wrote", OUT_PATH, "with", len(events), "events")
+for ev in new_events:
+    print(" ", ev["date"], ev["title"])
