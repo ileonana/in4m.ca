@@ -24,6 +24,18 @@ const { title, description } = Astro.props;
 			rel="stylesheet"
 		/>
 		<title>{title}</title>
+		<script is:inline>
+			// Pick the language before first paint (see src/i18n.ts): saved choice, else the browser's.
+			(function () {
+				var l;
+				try {
+					l = localStorage.getItem('lang');
+				} catch (e) {}
+				if (l !== 'en' && l !== 'zh') l = /^zh\b/i.test(navigator.language) ? 'zh' : 'en';
+				document.documentElement.dataset.lang = l;
+				document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
+			})();
+		</script>
 	</head>
 	<body>
 		<slot />
@@ -114,7 +126,7 @@ const { title, description } = Astro.props;
 		text-transform: uppercase;
 		color: var(--muted);
 	}
-	.label span {
+	.label span:not([data-l]) {
 		color: var(--accent);
 		letter-spacing: 0.08em;
 		margin-left: 0.25rem;
@@ -150,6 +162,21 @@ const { title, description } = Astro.props;
 		height: 0.32rem;
 		border-radius: 50%;
 		background: var(--accent);
+	}
+
+	/* Bilingual text (T.astro): show only the current language. */
+	:root:not([data-lang='zh']) [data-l='zh'],
+	:root[data-lang='zh'] [data-l='en'] {
+		display: none;
+	}
+	/* Chinese has no case, so the wide uppercase tracking just reads as gaps, and CJK needs a larger floor size. */
+	.label:lang(zh) {
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+	}
+	.group-title:lang(zh) {
+		font-size: 0.8rem;
+		letter-spacing: 0.1em;
 	}
 
 	@keyframes rise {

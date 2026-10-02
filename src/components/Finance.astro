@@ -1,12 +1,13 @@
 ---
 // Bank of Canada Valet: daily average rates, published once per business day.
+import T from './T.astro';
 ---
 
 <section class="tile fin" id="finance" aria-labelledby="fin-title">
-	<h2 class="group-title" id="fin-title">Rates <span class="src">Bank of Canada</span></h2>
+	<h2 class="group-title" id="fin-title"><T zh="汇率与利率">Rates</T> <span class="src"><T zh="加拿大央行">Bank of Canada</T></span></h2>
 
 	<div class="hero">
-		<div class="label">1 CAD in CNY <span>人民币</span></div>
+		<div class="label"><T zh="1 加元兑人民币">1 CAD in CNY <span>人民币</span></T></div>
 		<div class="num" data-role="cny">–</div>
 		<div class="delta" data-role="cny-d"></div>
 		<svg class="spark" data-role="spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"></svg>
@@ -15,11 +16,11 @@
 
 	<dl class="rows">
 		<div>
-			<dt>1 USD in CAD</dt>
+			<dt><T zh="1 美元兑加元">1 USD in CAD</T></dt>
 			<dd data-role="usd">–</dd>
 		</div>
 		<div>
-			<dt>Overnight rate</dt>
+			<dt><T zh="隔夜利率">Overnight rate</T></dt>
 			<dd data-role="policy">–</dd>
 		</div>
 	</dl>
@@ -28,6 +29,8 @@
 </section>
 
 <script>
+	import { lang, redrawable, t, timeOf } from '../i18n';
+
 	const REFRESH_MS = 60 * 60 * 1000; // the Bank publishes once a day
 	const CACHE_KEY = 'fx-v1';
 	const API = 'https://www.bankofcanada.ca/valet/observations';
@@ -45,6 +48,12 @@
 			return null;
 		}
 	}
+
+	const L = {
+		en: { range: (n: number, lo: string, hi: string) => `${n}-day  L ${lo}  H ${hi}` },
+		zh: { range: (n: number, lo: string, hi: string) => `近 ${n} 日  低 ${lo}  高 ${hi}` },
+	};
+	const show = redrawable();
 
 	const val = (o: Obs, s: string) => {
 		const x = o[s];
@@ -69,16 +78,16 @@
 		const span = hi - lo || 1;
 		const pts = vs.map((v, i) => `${((i / (vs.length - 1)) * 120).toFixed(1)},${(29 - ((v - lo) / span) * 26).toFixed(1)}`);
 		q('spark').innerHTML = `<polyline points="${pts.join(' ')}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-		q('range').textContent = `${vs.length}-day  L ${lo.toFixed(4)}  H ${hi.toFixed(4)}`;
+		q('range').textContent = L[lang()].range(vs.length, lo.toFixed(4), hi.toFixed(4));
 
 		const usd = fx.map((o) => val(o, 'FXUSDCAD')).filter(isFinite);
 		q('usd').textContent = usd[usd.length - 1].toFixed(4);
 		q('policy').textContent = `${Number(policy).toFixed(2)}%`;
 
-		const time = new Date(at).toLocaleTimeString('en-CA', { timeZone: 'America/Toronto', hour: 'numeric', minute: '2-digit' });
+		const time = timeOf(at);
 		const note = q('updated');
 		note.classList.toggle('stale', stale);
-		note.textContent = stale ? `Couldn't refresh · last updated ${time}` : `Updated ${time}`;
+		note.textContent = stale ? t().stale(time) : t().updated(time);
 	}
 
 	async function get(path: string) {
@@ -89,17 +98,17 @@
 
 	async function refresh() {
 		const cached = readCache();
-		if (cached && Date.now() - cached.at < REFRESH_MS) return render(cached);
+		if (cached && Date.now() - cached.at < REFRESH_MS) return show(() => render(cached));
 		try {
 			const [fx, pol] = await Promise.all([get('FXUSDCAD,FXCNYCAD/json?recent=30'), get('V39079/json?recent=1')]);
 			const fresh: Cached = { at: Date.now(), fx, policy: String(val(pol[0], 'V39079')) };
 			try {
 				localStorage.setItem(CACHE_KEY, JSON.stringify(fresh));
 			} catch {}
-			render(fresh);
+			show(() => render(fresh));
 		} catch {
-			if (cached) render(cached, true);
-			else q('updated').textContent = 'Unavailable';
+			if (cached) show(() => render(cached, true));
+			else show(() => (q('updated').textContent = t().unavailable));
 		}
 	}
 
@@ -188,6 +197,10 @@
 		letter-spacing: 0.04em;
 		color: var(--muted);
 		opacity: 0.85;
+	}
+	.foot:lang(zh) {
+		font-size: 0.72rem;
+		letter-spacing: 0.02em;
 	}
 	.foot.stale {
 		color: var(--danger);

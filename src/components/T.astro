@@ -1,0 +1,10 @@
+---
+// Bilingual static text: the slot is English, `zh` is Simplified Chinese.
+// Both are rendered; CSS in Base.astro shows the one matching <html data-lang>, so there is no flash.
+interface Props {
+	zh: string;
+}
+const { zh } = Astro.props;
+---
+
+<span data-l="en"><slot /></span><span data-l="zh">{zh}</span>

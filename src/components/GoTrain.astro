@@ -1,34 +1,37 @@
 ---
 import schedule from '../data/go-barrie.json';
+import T from './T.astro';
 ---
 
 <section class="tile go" id="go-train" aria-labelledby="go-title">
 	<header>
-		<h2 class="group-title" id="go-title">GO Train · Barrie line</h2>
-		<span class="sub">Maple ⇄ Union</span>
+		<h2 class="group-title" id="go-title"><T zh="GO 火车 · 巴里线">GO Train · Barrie line</T></h2>
+		<span class="sub" lang="en">Maple ⇄ Union</span>
 	</header>
 
 	<div class="dirs">
 		<div class="dir" data-dir="toUnion">
-			<div class="route label">Maple <span>→</span> Union</div>
+			<div class="route label"><T zh="枫树镇">Maple</T> <span>→</span> <T zh="联合车站">Union</T></div>
 			<div class="next num" data-role="next">–</div>
 			<div class="eta" data-role="eta"></div>
 			<div class="then" data-role="then"></div>
 		</div>
 		<div class="dir" data-dir="toMaple">
-			<div class="route label">Union <span>→</span> Maple</div>
+			<div class="route label"><T zh="联合车站">Union</T> <span>→</span> <T zh="枫树镇">Maple</T></div>
 			<div class="next num" data-role="next">–</div>
 			<div class="eta" data-role="eta"></div>
 			<div class="then" data-role="then"></div>
 		</div>
 	</div>
 
-	<footer data-role="updated" data-generated={schedule.generated} data-end={schedule.feedEnd}>Scheduled times · no live delays yet</footer>
+	<footer data-role="updated" data-generated={schedule.generated} data-end={schedule.feedEnd}></footer>
 
 	<script type="application/json" id="go-schedule" set:html={JSON.stringify(schedule.days)} />
 </section>
 
 <script>
+	import { lang, locale, onLang } from '../i18n';
+
 	type Train = { dep: string; arr: string };
 	type Day = { toUnion: Train[]; toMaple: Train[] };
 
@@ -68,11 +71,45 @@ import schedule from '../data/go-barrie.json';
 		return new Date(date + 'T00:00:00Z').getTime() / 60000 + h * 60 + m;
 	}
 
+	const L = {
+		en: {
+			// "7:05 pm"
+			clock: (h: number, mm: string) => `${h % 12 || 12}:${mm} ${h >= 12 ? 'pm' : 'am'}`,
+			now: 'departing now',
+			mins: (m: number) => `in ${m} min`,
+			hours: (h: number, m: number) => `in ${h} h ${m} min`,
+			tomorrow: 'Tomorrow · ',
+			arrives: (t: string) => `arrives ${t}`,
+			laterTomorrow: 'tomorrow ',
+			then: (list: string) => `Then ${list}`,
+			none: 'No trains',
+			ending: 'Schedule ends soon, check back later',
+			ended: (when: string) => `Timetable ended · last updated ${when}`,
+			stale: (when: string) => `Couldn't refresh timetable · last updated ${when}`,
+			ok: (when: string) => `Scheduled times · timetable updated ${when} · no live delays yet`,
+		},
+		zh: {
+			// "19:05"
+			clock: (h: number, mm: string) => `${String(h).padStart(2, '0')}:${mm}`,
+			now: '即将发车',
+			mins: (m: number) => `${m} 分钟后`,
+			hours: (h: number, m: number) => `${h} 小时 ${m} 分钟后`,
+			tomorrow: '明天 · ',
+			arrives: (t: string) => `${t} 到达`,
+			laterTomorrow: '明天 ',
+			then: (list: string) => `之后 ${list}`,
+			none: '暂无车次',
+			ending: '时刻表即将结束，请稍后再查看',
+			ended: (when: string) => `时刻表已过期 · 上次更新 ${when}`,
+			stale: (when: string) => `时刻表刷新失败 · 上次更新 ${when}`,
+			ok: (when: string) => `计划时间 · 时刻表更新于 ${when} · 暂无实时晚点信息`,
+		},
+	};
+	const l = () => L[lang()];
+
 	function clock(hhmm: string) {
-		let [h, m] = hhmm.split(':').map(Number);
-		h %= 24;
-		const suffix = h >= 12 ? 'pm' : 'am';
-		return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${suffix}`;
+		const [h, m] = hhmm.split(':').map(Number);
+		return l().clock(h % 24, String(m).padStart(2, '0'));
 	}
 
 	function upcoming(dir: keyof Day, now: { date: string; minutes: number }) {
@@ -88,10 +125,9 @@ import schedule from '../data/go-barrie.json';
 	}
 
 	function eta(mins: number) {
-		if (mins <= 0) return 'departing now';
-		if (mins < 60) return `in ${mins} min`;
-		const h = Math.floor(mins / 60);
-		return `in ${h} h ${mins % 60} min`;
+		if (mins <= 0) return l().now;
+		if (mins < 60) return l().mins(mins);
+		return l().hours(Math.floor(mins / 60), mins % 60);
 	}
 
 	function render() {
@@ -101,8 +137,8 @@ import schedule from '../data/go-barrie.json';
 			const q = (role: string) => el.querySelector<HTMLElement>(`[data-role="${role}"]`)!;
 			const first = list[0];
 			if (!first) {
-				q('next').textContent = 'No trains';
-				q('eta').textContent = 'Schedule ends soon, check back later';
+				q('next').textContent = l().none;
+				q('eta').textContent = l().ending;
 				q('then').textContent = '';
 				continue;
 			}
@@ -110,12 +146,12 @@ import schedule from '../data/go-barrie.json';
 			const dayOf = (x: { dep: number }) => Math.floor((x.dep - at(now.date, '00:00')) / 1440);
 			q('next').textContent = clock(first.train.dep);
 			q('eta').textContent =
-				`${dayOf(first) > 0 ? 'Tomorrow · ' : ''}${eta(first.dep - now.minutes)} · arrives ${clock(first.train.arr)}`;
+				`${dayOf(first) > 0 ? l().tomorrow : ''}${eta(first.dep - now.minutes)} · ${l().arrives(clock(first.train.arr))}`;
 			const later = list.slice(1, 4).map((x, i) => {
 				const prev = list[i]; // the departure just before this one
-				return `${dayOf(x) > dayOf(prev) ? 'tomorrow ' : ''}${clock(x.train.dep)}`;
+				return `${dayOf(x) > dayOf(prev) ? l().laterTomorrow : ''}${clock(x.train.dep)}`;
 			});
-			q('then').textContent = later.length ? `Then ${later.join(' · ')}` : '';
+			q('then').textContent = later.length ? l().then(later.join(' · ')) : '';
 		}
 	}
 
@@ -123,7 +159,7 @@ import schedule from '../data/go-barrie.json';
 	function renderFooter() {
 		const el = document.querySelector<HTMLElement>('#go-train [data-role="updated"]')!;
 		const generated = new Date(el.dataset.generated!);
-		const when = new Intl.DateTimeFormat('en-CA', {
+		const when = new Intl.DateTimeFormat(locale(), {
 			timeZone: tz,
 			month: 'short',
 			day: 'numeric',
@@ -133,19 +169,16 @@ import schedule from '../data/go-barrie.json';
 		const ended = torontoNow().date > el.dataset.end!;
 		const stale = ended || Date.now() - generated.getTime() > 30 * 3600_000; // daily refresh + slack
 		el.classList.toggle('stale', stale);
-		el.textContent = ended
-			? `Timetable ended · last updated ${when}`
-			: stale
-				? `Couldn't refresh timetable · last updated ${when}`
-				: `Scheduled times · timetable updated ${when} · no live delays yet`;
+		el.textContent = ended ? l().ended(when) : stale ? l().stale(when) : l().ok(when);
 	}
 
-	render();
-	renderFooter();
-	setInterval(() => {
+	function update() {
 		render();
 		renderFooter();
-	}, 15_000);
+	}
+	update();
+	setInterval(update, 15_000);
+	onLang(update);
 </script>
 
 <style>
@@ -200,6 +233,10 @@ import schedule from '../data/go-barrie.json';
 		font-size: 0.68rem;
 		letter-spacing: 0.04em;
 		opacity: 0.85;
+	}
+	footer:lang(zh) {
+		font-size: 0.72rem;
+		letter-spacing: 0.02em;
 	}
 	footer.stale {
 		color: var(--danger);

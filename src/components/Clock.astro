@@ -1,5 +1,6 @@
 ---
 import { Solar } from 'lunar-javascript';
+import T from './T.astro';
 
 // 黄历 宜/忌 for each day (China date), computed at build time so the client ships no library.
 // The daily deploy keeps this window rolling forward.
@@ -19,19 +20,19 @@ for (let i = -1; i < DAYS; i++) {
 }
 ---
 
-<section class="tile clock" id="clock" aria-label="Time, date, holidays and almanac">
+<section class="tile clock" id="clock" aria-label="Time, date, holidays and almanac" data-zh-aria-label="时间、日期、假日与黄历">
 	<div class="layout">
 	<div class="group">
-		<h2 class="group-title">North America</h2>
+		<h2 class="group-title"><T zh="北美">North America</T></h2>
 		<div class="cells">
 			<div class="cell" data-zone="America/Toronto">
-				<div class="label">Toronto <span data-role="abbr"></span></div>
+				<div class="label"><T zh="多伦多">Toronto</T> <span data-role="abbr"></span></div>
 				<div class="time num"><span data-role="time">--:--</span><small data-role="sec"></small></div>
 				<div class="date" data-role="date"></div>
 			</div>
 			<div class="cell holiday">
-				<div class="label" title="Ontario statutory holidays">Next holiday</div>
-				<div class="days num"><span data-role="days">–</span><small data-role="unit">days</small></div>
+				<div class="label" title="Ontario statutory holidays" data-zh-title="安大略省法定假日"><T zh="下个假日">Next holiday</T></div>
+				<div class="days num"><span data-role="days">–</span><small data-role="unit"></small></div>
 				<div class="date" data-role="holiday"></div>
 				<div class="lunar" data-role="holiday-date"></div>
 			</div>
@@ -39,15 +40,15 @@ for (let i = -1; i < DAYS; i++) {
 	</div>
 
 	<div class="group wide">
-		<h2 class="group-title">China</h2>
+		<h2 class="group-title"><T zh="中国">China</T></h2>
 		<div class="cells">
 			<div class="cell" data-zone="Asia/Shanghai">
-				<div class="label">Beijing <span>CST</span></div>
+				<div class="label"><T zh="北京">Beijing</T> <span>CST</span></div>
 				<div class="time num"><span data-role="time">--:--</span><small data-role="sec"></small></div>
 				<div class="date" data-role="date"></div>
 				<div class="lunar" data-role="lunar"></div>
 			</div>
-			<div class="cell almanac" data-role="almanac" hidden>
+			<div class="cell almanac" data-role="almanac" lang="zh-CN" hidden>
 				<div class="label">黄历</div>
 				<div class="row yi"><b>宜</b><span data-role="yi"></span><button type="button" class="more" data-role="yi-more" hidden></button></div>
 				<div class="row ji"><b>忌</b><span data-role="ji"></span><button type="button" class="more" data-role="ji-more" hidden></button></div>
@@ -61,6 +62,8 @@ for (let i = -1; i < DAYS; i++) {
 </section>
 
 <script>
+	import { lang, locale, onLang } from '../i18n';
+
 	const fmt = (zone: string, opts: Intl.DateTimeFormatOptions, locale = 'en-CA') =>
 		new Intl.DateTimeFormat(locale, { timeZone: zone, ...opts });
 
@@ -71,8 +74,19 @@ for (let i = -1; i < DAYS; i++) {
 		return cache.get(k)!;
 	}
 
+	const L = {
+		en: {
+			today: 'Today',
+			unit: (days: number) => (days === 1 ? 'day' : 'days'),
+		},
+		zh: {
+			today: '今天',
+			unit: () => '天',
+		},
+	};
+
 	// --- Ontario statutory holidays -------------------------------------------------
-	type Holiday = { name: string; date: Date }; // date is UTC midnight of the calendar day
+	type Holiday = { name: { en: string; zh: string }; date: Date }; // date is UTC midnight of the calendar day
 
 	const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
 
@@ -111,15 +125,15 @@ for (let i = -1; i < DAYS; i++) {
 		const goodFriday = new Date(e.getTime() - 2 * 86400000);
 		// Christmas/Boxing Day observance is left as the calendar date.
 		return [
-			{ name: "New Year's Day", date: utc(y, 1, 1) },
-			{ name: 'Family Day', date: nthWeekday(y, 2, 1, 3) },
-			{ name: 'Good Friday', date: goodFriday },
-			{ name: 'Victoria Day', date: victoriaDay(y) },
-			{ name: 'Canada Day', date: utc(y, 7, 1) },
-			{ name: 'Labour Day', date: nthWeekday(y, 9, 1, 1) },
-			{ name: 'Thanksgiving', date: nthWeekday(y, 10, 1, 2) },
-			{ name: 'Christmas Day', date: utc(y, 12, 25) },
-			{ name: 'Boxing Day', date: utc(y, 12, 26) },
+			{ name: { en: "New Year's Day", zh: '元旦' }, date: utc(y, 1, 1) },
+			{ name: { en: 'Family Day', zh: '家庭日' }, date: nthWeekday(y, 2, 1, 3) },
+			{ name: { en: 'Good Friday', zh: '耶稣受难日' }, date: goodFriday },
+			{ name: { en: 'Victoria Day', zh: '维多利亚日' }, date: victoriaDay(y) },
+			{ name: { en: 'Canada Day', zh: '加拿大国庆日' }, date: utc(y, 7, 1) },
+			{ name: { en: 'Labour Day', zh: '劳动节' }, date: nthWeekday(y, 9, 1, 1) },
+			{ name: { en: 'Thanksgiving', zh: '感恩节' }, date: nthWeekday(y, 10, 1, 2) },
+			{ name: { en: 'Christmas Day', zh: '圣诞节' }, date: utc(y, 12, 25) },
+			{ name: { en: 'Boxing Day', zh: '节礼日' }, date: utc(y, 12, 26) },
 		];
 	}
 
@@ -182,6 +196,7 @@ for (let i = -1; i < DAYS; i++) {
 
 	function render() {
 		const now = new Date();
+		const loc = locale();
 
 		for (const cell of root.querySelectorAll<HTMLElement>('[data-zone]')) {
 			const zone = cell.dataset.zone!;
@@ -191,12 +206,12 @@ for (let i = -1; i < DAYS; i++) {
 				hourCycle: 'h23',
 			}).format(now);
 			q(cell, 'sec').textContent = f(zone, 's', { second: '2-digit' }).format(now).padStart(2, '0');
-			q(cell, 'date').textContent = f(zone, 'date', {
-				weekday: 'short',
-				month: 'short',
-				day: 'numeric',
-				year: 'numeric',
-			}).format(now);
+			q(cell, 'date').textContent = f(
+				zone,
+				'date',
+				{ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' },
+				loc,
+			).format(now);
 
 			if (zone === 'America/Toronto') {
 				q(cell, 'abbr').textContent = f(zone, 'tz', { timeZoneName: 'short' })
@@ -219,18 +234,18 @@ for (let i = -1; i < DAYS; i++) {
 		const h = nextHoliday(today);
 		const days = Math.round((h.date.getTime() - today.getTime()) / 86400000);
 		const holiday = root.querySelector('.holiday')!;
-		q(holiday, 'days').textContent = days === 0 ? 'Today' : String(days);
-		q(holiday, 'unit').textContent = days === 0 ? '' : days === 1 ? 'day' : 'days';
-		q(holiday, 'holiday').textContent = h.name;
-		q(holiday, 'holiday-date').textContent = f('UTC', 'hd', {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric',
-		}).format(h.date);
+		const l = L[lang()];
+		q(holiday, 'days').textContent = days === 0 ? l.today : String(days);
+		q(holiday, 'unit').textContent = days === 0 ? '' : l.unit(days);
+		q(holiday, 'holiday').textContent = h.name[lang()];
+		q(holiday, 'holiday-date').textContent = f('UTC', 'hd', { weekday: 'short', month: 'short', day: 'numeric' }, loc).format(
+			h.date,
+		);
 	}
 
 	render();
 	setInterval(render, 1000);
+	onLang(render);
 </script>
 
 <style>

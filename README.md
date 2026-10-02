@@ -4,6 +4,8 @@ A personal dashboard, built with [Astro](https://astro.build) and deployed to Gi
 
 Each tile is a self-contained component in `src/components/` and is laid out as a bento grid in `src/pages/index.astro`.
 
+The `EN | 中` toggle switches between English and Simplified Chinese; the choice is saved in the browser, and a first visit follows the browser's language. Static text is written as `<T zh="…">English</T>` (`src/components/T.astro`); text built by a tile's script comes from that tile's `en`/`zh` strings and is redrawn on change (`src/i18n.ts`). Hacker News, On this day and Kid stay in English.
+
 | Tile | Source |
 | :--- | :----- |
 | Clock | Toronto / Beijing time, lunar date, Ontario holidays, 黄历 (computed at build time) |
