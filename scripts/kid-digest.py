@@ -3,8 +3,9 @@
 Runs on the NAS (Synology Task Scheduler, hourly) -- never in CI. Reads new mail from
 two Gmail accounts over IMAP, asks DeepSeek to classify which messages are about the
 kid's school or extracurricular activities, extracts structured events from the relevant
-ones, merges them into a private local state file, encrypts the current upcoming-events
-list, and commits + pushes it so the existing GitHub Pages workflow redeploys. Every run
+ones, merges them into a private local state file, translates each upcoming event into
+English and Simplified Chinese for the site's language toggle, encrypts the current
+upcoming-events list, and commits + pushes it so the existing GitHub Pages workflow redeploys. Every run
 publishes: the ciphertext is re-randomised each time and carries a "generated" timestamp
 that the page uses to flag a stalled pipeline, so the daily commit doubles as a heartbeat.
 
@@ -36,6 +37,7 @@ Usage:
 
 import base64
 import email
+import hashlib
 import html.parser
 import imaplib
 import json
@@ -72,6 +74,7 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
 PBKDF2_ITERATIONS = 600_000
 IMAP_HOST = "imap.gmail.com"
 CLASSIFY_BATCH = 20
+TRANSLATE_BATCH = 25
 BODY_CHAR_CAP = 6000
 MAX_PDF_ATTACHMENTS_PER_EMAIL = 2
 MAX_PDF_PAGES = 2
@@ -317,6 +320,66 @@ def extract_events(client: OpenAI, bodies: list[dict], existing_events: list[dic
     return events if isinstance(events, list) else []
 
 
+def _translation_key(event: dict) -> str:
+    """Fingerprint of the text a translation was made from, so an event is re-translated
+    only when an update changes its title or description."""
+    return hashlib.sha256(json.dumps([event["title"], event["description"]]).encode()).hexdigest()[:16]
+
+
+def _translated_text(item: object) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    title = item.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    description = item.get("description")
+    return {
+        "title": title.strip(),
+        "description": description.strip() if isinstance(description, str) and description.strip() else None,
+    }
+
+
+def translate_events(client: OpenAI, events: list[dict]):
+    """Give each event an English and a Simplified Chinese title/description (stored under
+    event["i18n"]), whatever language the source email was in. Only events whose text changed
+    since their last translation are sent. Best-effort: on any failure the event keeps its
+    original text, the site falls back to it, and the next run tries again."""
+    pending = [e for e in events if e.get("i18n", {}).get("source") != _translation_key(e)]
+    for i in range(0, len(pending), TRANSLATE_BATCH):
+        batch = pending[i : i + TRANSLATE_BATCH]
+        items = [{"i": n, "title": e["title"], "description": e["description"]} for n, e in enumerate(batch)]
+        prompt = (
+            "Translate these calendar events for a bilingual English / Simplified Chinese family "
+            f"dashboard about {KID_NAME}'s school and activities in Ontario, Canada. For each item, "
+            "give its title and description in natural English and in Simplified Chinese. If the "
+            "text is already in one of those languages, keep it as is for that language. Keep names "
+            "of people, schools, businesses and programs as written; keep dates, times, room numbers "
+            "and URLs unchanged. For Canadian school terms with no common Chinese equivalent, "
+            "translate and keep the English term in brackets, e.g. 教师专业发展日（PD Day）. "
+            "A null description stays null.\n\n"
+            f"{json.dumps(items, ensure_ascii=False)}\n\n"
+            'Respond as JSON: {"items": [{"i": 0, "en": {"title": "...", "description": "..." or null}, '
+            '"zh": {"title": "...", "description": "..." or null}}]}'
+        )
+        try:
+            resp = client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+            result = json.loads(resp.choices[0].message.content).get("items", [])
+        except Exception as e:
+            print(f"Translation failed, publishing untranslated: {e}", file=sys.stderr)
+            continue
+        for item in result if isinstance(result, list) else []:
+            n = item.get("i") if isinstance(item, dict) else None
+            if not isinstance(n, int) or not 0 <= n < len(batch):
+                continue
+            en, zh = _translated_text(item.get("en")), _translated_text(item.get("zh"))
+            if en and zh:
+                batch[n]["i18n"] = {"source": _translation_key(batch[n]), "en": en, "zh": zh}
+
+
 # ---------------------------------------------------------------------------
 # State + merge
 # ---------------------------------------------------------------------------
@@ -392,13 +455,22 @@ def merge_extracted(state: dict, extracted: list[dict], source_ids: list[str]):
             by_id[new_id] = event
 
 
-def public_payload(state: dict) -> dict:
+def upcoming_events(state: dict) -> list[dict]:
     today = date.today().isoformat()
-    events = [
-        {k: e[k] for k in ("title", "date", "time", "category", "description", "links")}
-        for e in state["events"]
-        if e["status"] == "active" and e["date"] >= today
-    ]
+    return [e for e in state["events"] if e["status"] == "active" and e["date"] >= today]
+
+
+def public_payload(state: dict) -> dict:
+    """title/description are English when a current translation exists (else the original
+    text); "zh" carries the Simplified Chinese version and is omitted until translated."""
+    events = []
+    for e in upcoming_events(state):
+        out = {k: e[k] for k in ("title", "date", "time", "category", "description", "links")}
+        i18n = e.get("i18n")
+        if i18n and i18n.get("source") == _translation_key(e):
+            out.update(i18n["en"])
+            out["zh"] = i18n["zh"]
+        events.append(out)
     events.sort(key=lambda e: (e["date"], e["time"] or ""))
     return {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "events": events}
 
@@ -509,8 +581,10 @@ def run(dry_run: bool):
             except Exception:
                 pass
 
+    translate_events(client, upcoming_events(state))
+
     if dry_run:
-        print(json.dumps(public_payload(state), indent=2))
+        print(json.dumps(public_payload(state), indent=2, ensure_ascii=False))
         return
 
     save_state(state)

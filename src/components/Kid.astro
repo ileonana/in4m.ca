@@ -1,9 +1,10 @@
 ---
 import enc from '../data/son.enc.json';
+import T from './T.astro';
 ---
 
 <section class="tile kid" id="kid" aria-labelledby="kid-title">
-	<h2 class="group-title" id="kid-title">Kid</h2>
+	<h2 class="group-title" id="kid-title"><T zh="孩子">Kid</T></h2>
 
 	<form class="unlock" data-role="unlock">
 		<input
@@ -11,17 +12,19 @@ import enc from '../data/son.enc.json';
 			data-role="password"
 			placeholder="Passphrase"
 			aria-label="Passphrase"
+			data-zh-placeholder="密码"
+			data-zh-aria-label="密码"
 			autocomplete="current-password"
 			autocapitalize="off"
 			autocorrect="off"
 			spellcheck="false"
 		/>
-		<button type="submit">Unlock</button>
+		<button type="submit"><T zh="解锁">Unlock</T></button>
 		<div class="error" data-role="error"></div>
 	</form>
 
 	<ol class="events" data-role="events" hidden></ol>
-	<p class="empty" data-role="empty" hidden>No upcoming events</p>
+	<p class="empty" data-role="empty" hidden><T zh="暂无近期活动">No upcoming events</T></p>
 
 	<footer data-role="updated" hidden></footer>
 
@@ -29,6 +32,8 @@ import enc from '../data/son.enc.json';
 </section>
 
 <script>
+	import { lang, locale, onLang, t } from '../i18n';
+
 	type Enc = { salt: string; iv: string; iterations: number; ciphertext: string };
 	type Event = {
 		title: string;
@@ -37,6 +42,7 @@ import enc from '../data/son.enc.json';
 		category: 'school' | 'activity';
 		description: string | null;
 		links: string[];
+		zh?: { title: string; description: string | null }; // added by the pipeline's translation step
 	};
 	type Payload = { generated: string; events: Event[] };
 
@@ -76,13 +82,37 @@ import enc from '../data/son.enc.json';
 		return JSON.parse(new TextDecoder().decode(plaintext));
 	}
 
+	const L = {
+		en: {
+			// "7:05 pm"
+			clock: (h: number, mm: string) => `${h % 12 || 12}:${mm} ${h >= 12 ? 'pm' : 'am'}`,
+			category: { school: 'school', activity: 'activity' },
+			link: (n: number) => `Link ${n}`,
+			wrong: 'Wrong passphrase.',
+		},
+		zh: {
+			// "19:05"
+			clock: (h: number, mm: string) => `${String(h).padStart(2, '0')}:${mm}`,
+			category: { school: '学校', activity: '课外' },
+			link: (n: number) => `链接 ${n}`,
+			wrong: '密码错误。',
+		},
+	};
+
 	function clock(hhmm: string) {
 		const [h, m] = hhmm.split(':').map(Number);
-		const suffix = h >= 12 ? 'pm' : 'am';
-		return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${suffix}`;
+		return L[lang()].clock(h, String(m).padStart(2, '0'));
 	}
 
+	// Chinese text when the pipeline has translated the event; otherwise the original.
+	const text = (e: Event) => (lang() === 'zh' && e.zh ? e.zh : e);
+
+	let shown: Payload | null = null; // redrawn when the language changes
+
 	function renderEvents(payload: Payload) {
+		shown = payload;
+		const s = L[lang()];
+		const loc = locale();
 		unlockForm.hidden = true;
 		eventsEl.hidden = payload.events.length === 0;
 		emptyEl.hidden = payload.events.length !== 0;
@@ -97,10 +127,10 @@ import enc from '../data/son.enc.json';
 				dateEl.className = 'date';
 				const dEl = document.createElement('span');
 				dEl.className = 'd';
-				dEl.textContent = new Intl.DateTimeFormat('en-CA', { day: 'numeric' }).format(date);
+				dEl.textContent = String(date.getDate());
 				const mEl = document.createElement('span');
 				mEl.className = 'm';
-				mEl.textContent = new Intl.DateTimeFormat('en-CA', { month: 'short' }).format(date);
+				mEl.textContent = new Intl.DateTimeFormat(loc, { month: 'short' }).format(date);
 				dateEl.append(dEl, mEl);
 
 				const body = document.createElement('div');
@@ -110,23 +140,24 @@ import enc from '../data/son.enc.json';
 				titleRow.className = 'title-row';
 				const titleEl = document.createElement('span');
 				titleEl.className = 'title';
-				titleEl.textContent = e.title;
+				titleEl.textContent = text(e).title;
 				const tagEl = document.createElement('span');
 				tagEl.className = 'tag';
-				tagEl.textContent = e.category;
+				tagEl.textContent = s.category[e.category] ?? e.category;
 				titleRow.append(titleEl, tagEl);
 
 				const metaEl = document.createElement('div');
 				metaEl.className = 'meta';
-				const weekday = new Intl.DateTimeFormat('en-CA', { weekday: 'short' }).format(date);
+				const weekday = new Intl.DateTimeFormat(loc, { weekday: 'short' }).format(date);
 				metaEl.textContent = e.time ? `${weekday} · ${clock(e.time)}` : weekday;
 
 				body.append(titleRow, metaEl);
 
-				if (e.description) {
+				const description = text(e).description;
+				if (description) {
 					const desc = document.createElement('div');
 					desc.className = 'desc';
-					desc.textContent = e.description;
+					desc.textContent = description;
 					body.append(desc);
 				}
 
@@ -141,7 +172,7 @@ import enc from '../data/son.enc.json';
 								href: l,
 								target: '_blank',
 								rel: 'noopener noreferrer',
-								textContent: `Link ${i + 1}`,
+								textContent: s.link(i + 1),
 							}),
 						);
 					});
@@ -154,7 +185,7 @@ import enc from '../data/son.enc.json';
 		);
 
 		const generated = new Date(payload.generated);
-		const when = new Intl.DateTimeFormat('en-CA', {
+		const when = new Intl.DateTimeFormat(loc, {
 			month: 'short',
 			day: 'numeric',
 			hour: 'numeric',
@@ -163,7 +194,7 @@ import enc from '../data/son.enc.json';
 		const stale = Date.now() - generated.getTime() > 30 * 3600_000; // daily refresh + slack
 		footerEl.hidden = false;
 		footerEl.classList.toggle('stale', stale);
-		footerEl.textContent = stale ? `Couldn't refresh · last updated ${when}` : `Updated ${when}`;
+		footerEl.textContent = stale ? t().stale(when) : t().updated(when);
 	}
 
 	async function tryUnlock(passphrase: string, remember: boolean) {
@@ -176,7 +207,7 @@ import enc from '../data/son.enc.json';
 			}
 			renderEvents(payload);
 		} catch {
-			errorEl.textContent = 'Wrong passphrase.';
+			errorEl.textContent = L[lang()].wrong;
 		}
 	}
 
@@ -194,6 +225,11 @@ import enc from '../data/son.enc.json';
 		}
 	})();
 	if (remembered) tryUnlock(remembered, false);
+
+	onLang(() => {
+		if (shown) renderEvents(shown);
+		else if (errorEl.textContent) errorEl.textContent = L[lang()].wrong;
+	});
 </script>
 
 <style>
@@ -291,6 +327,11 @@ import enc from '../data/son.enc.json';
 		text-transform: uppercase;
 		color: var(--muted);
 	}
+	.events :global(.date .m:lang(zh)),
+	.events :global(.tag:lang(zh)) {
+		font-size: 0.68rem;
+		letter-spacing: 0.02em;
+	}
 	.events :global(.cat-activity .tag) {
 		color: var(--accent);
 	}
@@ -331,6 +372,10 @@ import enc from '../data/son.enc.json';
 		letter-spacing: 0.04em;
 		color: var(--muted);
 		opacity: 0.85;
+	}
+	footer:lang(zh) {
+		font-size: 0.72rem;
+		letter-spacing: 0.02em;
 	}
 	footer.stale {
 		color: var(--danger);

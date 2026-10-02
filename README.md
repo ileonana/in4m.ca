@@ -4,7 +4,7 @@ A personal dashboard, built with [Astro](https://astro.build) and deployed to Gi
 
 Each tile is a self-contained component in `src/components/` and is laid out as a bento grid in `src/pages/index.astro`.
 
-The `EN | 中` toggle switches between English and Simplified Chinese; the choice is saved in the browser, and a first visit follows the browser's language. Static text is written as `<T zh="…">English</T>` (`src/components/T.astro`); text built by a tile's script comes from that tile's `en`/`zh` strings and is redrawn on change (`src/i18n.ts`). Hacker News, On this day and Kid stay in English.
+The `EN | 中` toggle switches between English and Simplified Chinese; the choice is saved in the browser, and a first visit follows the browser's language. Static text is written as `<T zh="…">English</T>` (`src/components/T.astro`); text built by a tile's script comes from that tile's `en`/`zh` strings and is redrawn on change (`src/i18n.ts`). Hacker News and On this day stay in English; Kid events are translated by the pipeline (below).
 
 | Tile | Source |
 | :--- | :----- |
@@ -34,6 +34,6 @@ The `EN | 中` toggle switches between English and Simplified Chinese; the choic
 Python helpers live in `scripts/` and are run with [uv](https://docs.astral.sh/uv/) (`uv sync` once, then `uv run scripts/<name>.py`).
 
 - `go-schedule.py` regenerates `src/data/go-barrie.json`. It uses only the standard library and runs in CI.
-- `kid-digest.py` builds `src/data/son.enc.json`. It runs daily on a NAS (see `kid-digest.Dockerfile`), never in CI. It reads new mail from two Gmail accounts over IMAP, uses DeepSeek to pick out school and activity emails and extract dated events, encrypts the upcoming events with AES-GCM (key from PBKDF2), then commits and pushes so the site redeploys. Configuration comes from environment variables; see `kid-digest.env.example`. The ciphertext is public, so the passphrase must be long and random.
+- `kid-digest.py` builds `src/data/son.enc.json`. It runs daily on a NAS (see `kid-digest.Dockerfile`), never in CI. It reads new mail from two Gmail accounts over IMAP, uses DeepSeek to pick out school and activity emails and extract dated events, translates each upcoming event into English and Simplified Chinese (cached, so only new or changed events are sent), encrypts the upcoming events with AES-GCM (key from PBKDF2), then commits and pushes so the site redeploys. Configuration comes from environment variables; see `kid-digest.env.example`. The ciphertext is public, so the passphrase must be long and random.
 - `kid-digest-known-senders.txt` lists sender domains that skip the AI relevance check.
 - `list-senders.py` is a one-off helper for building that list.

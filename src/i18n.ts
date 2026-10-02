@@ -41,7 +41,7 @@ export function redrawable() {
 }
 
 // Attributes that cannot hold two spans: put the Chinese in data-zh-<attr>; English stays in <attr>.
-const ATTRS = ['title', 'aria-label'];
+const ATTRS = ['title', 'aria-label', 'placeholder'];
 function swapAttrs() {
 	const l = lang();
 	for (const a of ATTRS) {
