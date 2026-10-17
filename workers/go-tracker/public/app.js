@@ -7,6 +7,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 const markers = new Map(); // tripId -> { marker, line }
 const stationNames = new Map(); // stop code ("UN") -> name ("Union Station")
+const stationCoords = new Map(); // stop code -> [lat, lon]
 const lines = new Map(); // line code ("BR") -> { name, color, group: L.LayerGroup }
 const statusEl = document.getElementById("status");
 const HIDDEN_KEY = "hiddenLines";
@@ -61,6 +62,7 @@ async function drawLines() {
   // group, so it stays visible as long as any of its lines is shown.
   for (const s of data.stations) {
     stationNames.set(s.code, s.name);
+    stationCoords.set(s.code, [s.lat, s.lon]);
     for (const code of s.lines) {
       const line = lines.get(code);
       if (!line) continue;
@@ -78,11 +80,35 @@ async function drawLines() {
   map.fitBounds(data.stations.map((s) => [s.lat, s.lon]), { padding: [20, 20] });
 }
 
+const NEAR_KM = 0.4; // closer than this to a station, its direction is unreliable
+
+// Distance (km) and compass bearing (degrees clockwise from north) between two
+// points. A flat-earth approximation is plenty at GO-network distances.
+function vectorTo([lat1, lon1], [lat2, lon2]) {
+  const dy = (lat2 - lat1) * 111.32;
+  const dx = (lon2 - lon1) * 111.32 * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180));
+  return { km: Math.hypot(dx, dy), bearing: (Math.atan2(dx, dy) * (180 / Math.PI) + 360) % 360 };
+}
+
+// Metrolinx currently sends bearing 0 / speed 0 for every train (no real
+// heading), so point the train at its next stop instead -- that follows the
+// track far better than aiming at the terminus. If it's already at the next
+// stop, fall back to the terminus; if it's at the terminus too, no heading.
+function headingOf(train) {
+  if (train.bearing || train.speed) return train.bearing;
+  for (const stop of [train.nextStop, train.finalStop]) {
+    const target = stop && stationCoords.get(stop.stopId);
+    if (!target) continue;
+    const v = vectorTo([train.lat, train.lon], target);
+    if (v.km > NEAR_KM) return v.bearing;
+  }
+  return null;
+}
+
 function trainIcon(train) {
   const color = lines.get(train.line)?.color ?? "#333";
-  // Metrolinx currently sends bearing 0 / speed 0 for every train, i.e. no real
-  // heading, so only draw a direction arrow when the feed actually has one.
-  if (!train.bearing && !train.speed) {
+  const heading = headingOf(train);
+  if (heading == null) {
     return L.divIcon({
       className: "",
       html: `<div class="train-dot" style="background:${color}"></div>`,
@@ -93,7 +119,7 @@ function trainIcon(train) {
   // The arrow glyph points east; GTFS bearing is degrees clockwise from north.
   return L.divIcon({
     className: "",
-    html: `<div class="train-icon" style="color:${color};transform: rotate(${train.bearing - 90}deg)">&#10148;</div>`,
+    html: `<div class="train-icon" style="color:${color};transform: rotate(${heading - 90}deg)">&#10148;</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
