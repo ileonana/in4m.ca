@@ -17,6 +17,9 @@ pnpm-debug.log*
 .env
 .env.production
 
+# confidential Metrolinx API docs -- not ours to redistribute
+GO Open API Starter Summary V6.pdf
+
 # macOS-specific files
 .DS_Store
 

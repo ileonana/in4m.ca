@@ -1,0 +1,25 @@
+name: Deploy GO Train Tracker Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/go-tracker/**'
+      - '.github/workflows/deploy-go-tracker.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        working-directory: workers/go-tracker
+        run: npm install
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/go-tracker

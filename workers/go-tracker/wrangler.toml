@@ -1,0 +1,20 @@
+name = "in4m-go-tracker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Every 2 minutes: comfortably inside the GO Transit API's own usage
+# guidance, and under Workers KV's free-tier write quota (1,000/day).
+[triggers]
+crons = ["*/2 * * * *"]
+
+[[kv_namespaces]]
+binding = "TRAIN_STATE"
+id = "76d8cf28175f4f1b8595b10500acf2e4"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[routes]]
+pattern = "go.in4m.ca"
+custom_domain = true
