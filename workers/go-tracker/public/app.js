@@ -1,13 +1,15 @@
-const map = L.map("map").setView([44.0, -79.5], 9); // Union <-> Allandale Waterfront corridor
+const map = L.map("map").setView([43.7, -79.6], 9); // refit to the network once line.json loads
 
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 18,
 }).addTo(map);
 
-const markers = new Map(); // tripId -> L.Marker
+const markers = new Map(); // tripId -> { marker, line }
 const stationNames = new Map(); // stop code ("UN") -> name ("Union Station")
+const lines = new Map(); // line code ("BR") -> { name, color, group: L.LayerGroup }
 const statusEl = document.getElementById("status");
+const HIDDEN_KEY = "hiddenLines";
 
 // Feed values end up in popup HTML, so escape them.
 function esc(value) {
@@ -18,27 +20,71 @@ function stationName(code) {
   return stationNames.get(code) ?? code;
 }
 
-// Track and stations from public/line.json (built by scripts/build-line.py).
-async function drawLine() {
+// Which lines the viewer switched off last time (per browser, best effort).
+function loadHidden() {
   try {
-    const line = await (await fetch("/line.json")).json();
-    L.polyline(line.shape, { color: "#003767", weight: 4, opacity: 0.6 }).addTo(map);
-    for (const s of line.stations) {
-      stationNames.set(s.code, s.name);
-      L.circleMarker([s.lat, s.lon], {
-        radius: 5, color: "#003767", weight: 2, fillColor: "#fff", fillOpacity: 1,
-      }).addTo(map).bindTooltip(esc(s.name));
-    }
+    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY)) ?? []);
   } catch {
-    // Map still works without it; popups fall back to stop codes.
+    return new Set();
   }
 }
 
-function trainIcon(bearing) {
-  const rotation = typeof bearing === "number" ? bearing : 0;
+function saveHidden() {
+  const hidden = [...lines].filter(([, l]) => !map.hasLayer(l.group)).map(([code]) => code);
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
+  } catch {}
+}
+
+// Track, stations and per-line toggles from public/line.json (built by scripts/build-line.py).
+async function drawLines() {
+  let data;
+  try {
+    data = await (await fetch("/line.json")).json();
+  } catch {
+    return; // map still works without it; trains just aren't grouped or named
+  }
+
+  const hidden = loadHidden();
+  const overlays = {};
+  for (const l of data.lines) {
+    const group = L.layerGroup();
+    for (const shape of l.shapes) {
+      L.polyline(shape, { color: l.color, weight: 4, opacity: 0.6 }).addTo(group);
+    }
+    lines.set(l.code, { name: l.name, color: l.color, group });
+    overlays[`<span class="swatch" style="background:${l.color}"></span>${esc(l.name)}`] = group;
+    if (!hidden.has(l.code)) group.addTo(map);
+  }
+
+  // A station shared by several lines (e.g. Union) gets a dot in each line's
+  // group, so it stays visible as long as any of its lines is shown.
+  for (const s of data.stations) {
+    stationNames.set(s.code, s.name);
+    for (const code of s.lines) {
+      const line = lines.get(code);
+      if (!line) continue;
+      L.circleMarker([s.lat, s.lon], {
+        radius: 4, color: "#333", weight: 1.5, fillColor: "#fff", fillOpacity: 1,
+      }).bindTooltip(esc(s.name)).addTo(line.group);
+    }
+  }
+
+  L.control.layers(null, overlays, { collapsed: window.innerWidth < 700 }).addTo(map);
+  map.on("overlayadd overlayremove", () => {
+    saveHidden();
+    updateStatus();
+  });
+  map.fitBounds(data.stations.map((s) => [s.lat, s.lon]), { padding: [20, 20] });
+}
+
+function trainIcon(train) {
+  // The arrow glyph points east; GTFS bearing is degrees clockwise from north.
+  const rotation = (typeof train.bearing === "number" ? train.bearing : 90) - 90;
+  const color = lines.get(train.line)?.color ?? "#333";
   return L.divIcon({
     className: "",
-    html: `<div class="train-icon" style="transform: rotate(${rotation}deg)">&#10148;</div>`,
+    html: `<div class="train-icon" style="color:${color};transform: rotate(${rotation}deg)">&#10148;</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
@@ -65,9 +111,12 @@ function formatEta(stop, label) {
 }
 
 function popupHtml(train) {
+  const line = lines.get(train.line);
+  const lineName = line ? `<span class="line" style="color:${line.color}">${esc(line.name)}</span>` : "";
   const heading = train.finalStop ? ` &rarr; ${esc(stationName(train.finalStop.stopId))}` : "";
   return `
     <div class="popup-eta">
+      ${lineName}
       <strong>${esc(train.label ?? train.tripId)}${heading}</strong>
       ${formatEta(train.nextStop, "Next stop")}
       ${formatEta(train.finalStop, "Terminus")}
@@ -75,52 +124,69 @@ function popupHtml(train) {
   `;
 }
 
+// The layer a train's marker lives in: its line's group, so toggling a line hides its trains too.
+function layerFor(line) {
+  return lines.get(line)?.group ?? map;
+}
+
+let lastData = null;
+
+function updateStatus() {
+  if (!lastData) return;
+  const total = markers.size;
+  const shown = [...markers.values()].filter(({ line }) => {
+    const l = lines.get(line);
+    return !l || map.hasLayer(l.group);
+  }).length;
+  const generated = lastData.generated ? new Date(lastData.generated) : null;
+  const ageMin = generated ? Math.round((Date.now() - generated.getTime()) / 60000) : null;
+  const filtered = shown < total ? ` (${shown} shown)` : "";
+  statusEl.textContent = !generated
+    ? "No data yet - check back shortly"
+    : total === 0
+      ? `No GO trains running right now - checked ${ageMin}m ago`
+      : `${total} GO train${total === 1 ? "" : "s"} running${filtered} - updated ${ageMin}m ago`;
+}
+
 async function refresh() {
-  let data;
   try {
     const res = await fetch("/api/trains");
-    data = await res.json();
+    lastData = await res.json();
   } catch (err) {
     statusEl.textContent = "Couldn't reach tracker API";
     return;
   }
 
   const seen = new Set();
-  for (const train of data.trains ?? []) {
+  for (const train of lastData.trains ?? []) {
     if (train.lat == null || train.lon == null) continue;
     seen.add(train.tripId);
 
     const latLng = [train.lat, train.lon];
-    const icon = trainIcon(train.bearing);
-    let marker = markers.get(train.tripId);
-    if (marker) {
-      marker.setLatLng(latLng);
-      marker.setIcon(icon);
-      marker.setPopupContent(popupHtml(train));
+    const icon = trainIcon(train);
+    const entry = markers.get(train.tripId);
+    if (entry && entry.line === train.line) {
+      entry.marker.setLatLng(latLng);
+      entry.marker.setIcon(icon);
+      entry.marker.setPopupContent(popupHtml(train));
     } else {
-      marker = L.marker(latLng, { icon }).addTo(map).bindPopup(popupHtml(train));
-      markers.set(train.tripId, marker);
+      entry?.marker.remove();
+      const marker = L.marker(latLng, { icon }).bindPopup(popupHtml(train)).addTo(layerFor(train.line));
+      markers.set(train.tripId, { marker, line: train.line });
     }
   }
 
   // Drop markers for trains no longer in the feed (trip ended, etc.)
-  for (const [tripId, marker] of markers) {
+  for (const [tripId, { marker }] of markers) {
     if (!seen.has(tripId)) {
-      map.removeLayer(marker);
+      marker.remove();
       markers.delete(tripId);
     }
   }
 
-  const trainCount = seen.size;
-  const generated = data.generated ? new Date(data.generated) : null;
-  const ageMin = generated ? Math.round((Date.now() - generated.getTime()) / 60000) : null;
-  statusEl.textContent = !generated
-    ? "No data yet - check back shortly"
-    : trainCount === 0
-      ? `No Barrie line trains running right now - checked ${ageMin}m ago`
-      : `${trainCount} train${trainCount === 1 ? "" : "s"} on the Barrie line - updated ${ageMin}m ago`;
+  updateStatus();
 }
 
-// Draw stations first so the first popups already have names.
-drawLine().then(refresh);
+// Draw lines first so the first trains already have colours, groups and station names.
+drawLines().then(refresh);
 setInterval(refresh, 30000); // snapshot only changes every 2 min

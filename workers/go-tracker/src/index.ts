@@ -1,18 +1,19 @@
-// GO Transit Barrie line live tracker.
+// GO Transit live train tracker (all 7 GO train lines, no buses).
 //
 // A Cron Trigger polls Metrolinx's GTFS-realtime feeds (JSON, despite the
 // "Gtfs" name -- confirmed by hand, see AGENTS.md) every 2
-// minutes, filters for the Barrie line, and writes one small snapshot to
+// minutes, keeps only GO trains, and writes one small snapshot to
 // KV. The public /api/trains route only ever reads that snapshot, so
 // browser traffic never touches Metrolinx's API directly or affects its
 // call volume.
 //
 // Real-time route_id values look like "09261126-BR" -- a schedule-revision
-// prefix plus the line code used throughout scripts/go-schedule.py -- so we
-// match on the "-BR" suffix rather than an exact string, in case the prefix
-// changes when Metrolinx publishes a new schedule. route_id is optional in
-// GTFS-realtime, so we also accept trip_ids shaped like "20261127-BR-6606"
-// (the format the static feed uses) in case a vehicle omits it.
+// prefix plus a line code -- so we read the code after the last "-" rather
+// than matching whole strings, in case the prefix changes when Metrolinx
+// publishes a new schedule. Train lines have letter codes (Kitchener is "GT",
+// its old Georgetown code); buses have numbers ("09261126-41") and are
+// skipped. route_id is optional in GTFS-realtime, so we fall back to trip_ids
+// shaped like "20261127-BR-6606" (the format the static feed uses).
 
 export interface Env {
   TRAIN_STATE: KVNamespace;
@@ -20,7 +21,8 @@ export interface Env {
   GO_API_KEY: string;
 }
 
-const LINE_CODE = "BR";
+// Must match the line codes in public/line.json (scripts/build-line.py).
+const TRAIN_LINES = new Set(["BR", "GT", "LE", "LW", "MI", "RH", "ST"]);
 const FEED_BASE = "https://api.openmetrolinx.com/OpenDataAPI/api/V1/Gtfs/Feed";
 const SNAPSHOT_KEY = "snapshot";
 
@@ -61,6 +63,7 @@ interface StopEta {
 
 interface TrainSnapshot {
   tripId: string;
+  line: string;
   vehicleId: string | null;
   label: string | null;
   directionId: number;
@@ -75,8 +78,12 @@ interface TrainSnapshot {
   finalStop: StopEta | null;
 }
 
-function isBarrieLine(trip: { route_id?: string; trip_id?: string }): boolean {
-  return !!trip.route_id?.endsWith(`-${LINE_CODE}`) || !!trip.trip_id?.includes(`-${LINE_CODE}-`);
+// The GO train line code for a trip, or null for buses / anything unrecognised.
+function trainLine(trip: { route_id?: string; trip_id?: string }): string | null {
+  const fromRoute = trip.route_id?.split("-").pop();
+  if (fromRoute && TRAIN_LINES.has(fromRoute)) return fromRoute;
+  const fromTrip = trip.trip_id?.split("-")[1];
+  return fromTrip && TRAIN_LINES.has(fromTrip) ? fromTrip : null;
 }
 
 async function fetchFeed(name: string, apiKey: string): Promise<any> {
@@ -117,7 +124,7 @@ async function refreshSnapshot(env: Env): Promise<void> {
   const stopUpdatesByTrip = new Map<string, StopTimeUpdate[]>();
   for (const entity of (tripUpdates.entity ?? []) as TripUpdateEntity[]) {
     const tu = entity.trip_update;
-    if (tu && isBarrieLine(tu.trip)) {
+    if (tu && trainLine(tu.trip)) {
       stopUpdatesByTrip.set(tu.trip.trip_id, tu.stop_time_update ?? []);
     }
   }
@@ -126,11 +133,13 @@ async function refreshSnapshot(env: Env): Promise<void> {
   const trains: TrainSnapshot[] = [];
   for (const entity of (vehiclePositions.entity ?? []) as VehicleEntity[]) {
     const v = entity.vehicle;
-    if (!v || !isBarrieLine(v.trip)) continue;
+    const line = v && trainLine(v.trip);
+    if (!v || !line) continue;
 
     const stopUpdates = stopUpdatesByTrip.get(v.trip.trip_id) ?? [];
     trains.push({
       tripId: v.trip.trip_id,
+      line,
       vehicleId: v.vehicle?.id ?? null,
       label: v.vehicle?.label ?? null,
       directionId: v.trip.direction_id,

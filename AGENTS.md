@@ -11,14 +11,15 @@ Manage the background server with `astro dev stop`, `astro dev status`, and `ast
 ## GO Train Tracker (Cloudflare Worker)
 
 `workers/go-tracker/` is a separate Cloudflare Worker, independent of the Astro site's
-GitHub Pages deploy. It serves a live map of GO Transit's Barrie line at `go.in4m.ca`.
+GitHub Pages deploy. It serves a live map of all 7 GO train lines (no buses) at `go.in4m.ca`.
 
 - A Cron Trigger (`*/2 * * * *`) fetches Metrolinx's `Gtfs/Feed/VehiclePosition` and
   `Gtfs/Feed/TripUpdates` endpoints (plain JSON, despite the "Gtfs" name -- confirmed by
-  inspecting a live response, not protobuf), filters for trips whose `route_id` ends in
-  `-BR` (the Barrie line; the prefix before it is a schedule-revision code that changes
-  over time, so match the suffix, not the whole string), and writes one JSON snapshot to
-  a KV namespace (`TRAIN_STATE`).
+  inspecting a live response, not protobuf), keeps trips whose `route_id` ends in a
+  train line code (`-BR`, `-GT`, `-LE`, `-LW`, `-MI`, `-RH`, `-ST`; the prefix is a
+  schedule-revision code that changes over time, so match the suffix, not the whole
+  string; buses have numeric codes and are dropped), and writes one JSON snapshot to a
+  KV namespace (`TRAIN_STATE`). Kitchener is `GT` (its old Georgetown code), not `KI`.
 - The Worker's `fetch` handler serves that snapshot at `/api/trains` and the static
   Leaflet map page from `public/`. Browser traffic never calls Metrolinx directly --
   only the cron job does, so client load never affects the upstream call volume.
@@ -34,9 +35,10 @@ GitHub Pages deploy. It serves a live map of GO Transit's Barrie line at `go.in4
   `wrangler secret put`), not a GitHub secret.
 - Local commands (run from `workers/go-tracker/`): `npm run dev`, `npm run deploy`,
   `npm run typecheck`.
-- Station names/positions and the track line on the map come from `public/line.json`,
-  built from the public static GTFS zip (no API key) by `uv run scripts/build-line.py`.
-  Re-run it by hand if Metrolinx adds or renames a Barrie line station.
+- Line names/colours, track shapes and station names/positions on the map come from
+  `public/line.json`, built from the public static GTFS zip (no API key) by
+  `uv run scripts/build-line.py`. Re-run it by hand if Metrolinx adds or renames a
+  station or line (and keep `TRAIN_LINES` in `src/index.ts` in sync).
 
 ## Documentation
 
