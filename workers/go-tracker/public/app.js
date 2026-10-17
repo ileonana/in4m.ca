@@ -79,12 +79,21 @@ async function drawLines() {
 }
 
 function trainIcon(train) {
-  // The arrow glyph points east; GTFS bearing is degrees clockwise from north.
-  const rotation = (typeof train.bearing === "number" ? train.bearing : 90) - 90;
   const color = lines.get(train.line)?.color ?? "#333";
+  // Metrolinx currently sends bearing 0 / speed 0 for every train, i.e. no real
+  // heading, so only draw a direction arrow when the feed actually has one.
+  if (!train.bearing && !train.speed) {
+    return L.divIcon({
+      className: "",
+      html: `<div class="train-dot" style="background:${color}"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+  }
+  // The arrow glyph points east; GTFS bearing is degrees clockwise from north.
   return L.divIcon({
     className: "",
-    html: `<div class="train-icon" style="color:${color};transform: rotate(${rotation}deg)">&#10148;</div>`,
+    html: `<div class="train-icon" style="color:${color};transform: rotate(${train.bearing - 90}deg)">&#10148;</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
@@ -113,11 +122,14 @@ function formatEta(stop, label) {
 function popupHtml(train) {
   const line = lines.get(train.line);
   const lineName = line ? `<span class="line" style="color:${line.color}">${esc(line.name)}</span>` : "";
-  const heading = train.finalStop ? ` &rarr; ${esc(stationName(train.finalStop.stopId))}` : "";
+  // Labels look like "GT - Stratford GO" (line code + headsign); the destination says it better.
+  const heading = train.finalStop
+    ? `&rarr; ${esc(stationName(train.finalStop.stopId))}`
+    : esc((train.label ?? train.tripId).replace(/^[A-Z]{2} - /, ""));
   return `
     <div class="popup-eta">
       ${lineName}
-      <strong>${esc(train.label ?? train.tripId)}${heading}</strong>
+      <strong>${heading}</strong>
       ${formatEta(train.nextStop, "Next stop")}
       ${formatEta(train.finalStop, "Terminus")}
     </div>
