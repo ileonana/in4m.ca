@@ -1,6 +1,6 @@
 """Build src/data/son.enc.json: upcoming school/activity events for [son], triaged from email.
 
-Runs on the NAS (Synology Task Scheduler, hourly) -- never in CI. Reads new mail from
+Runs on the NAS (Synology Task Scheduler, daily) -- never in CI. Reads new mail from
 two Gmail accounts over IMAP, asks DeepSeek to classify which messages are about the
 kid's school or extracurricular activities, extracts structured events from the relevant
 ones, merges them into a private local state file, translates each upcoming event into
@@ -22,7 +22,7 @@ committed to this repo):
     GMAIL_<LABEL>_APP_PASSWORD  The 16-character Gmail App Password
     DEEPSEEK_API_KEY
     DEEPSEEK_BASE_URL           default: https://api.deepseek.com
-    DEEPSEEK_MODEL              default: deepseek-chat
+    DEEPSEEK_MODEL              default: deepseek-flash
     KID_DIGEST_PASSPHRASE       shared encryption passphrase (long, random)
     KID_DIGEST_STATE            path to the private state file, default ~/kid-digest/state.json
     KID_DIGEST_INITIAL_DAYS     lookback window for an account's first-ever run, default 14
