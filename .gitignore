@@ -34,3 +34,6 @@ GO Open API Starter Summary V6.pdf
 .envrc
 __pycache__/
 *.pyc
+
+# Wrangler local dev state
+.wrangler/

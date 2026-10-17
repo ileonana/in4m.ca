@@ -34,6 +34,9 @@ GitHub Pages deploy. It serves a live map of GO Transit's Barrie line at `go.in4
   `wrangler secret put`), not a GitHub secret.
 - Local commands (run from `workers/go-tracker/`): `npm run dev`, `npm run deploy`,
   `npm run typecheck`.
+- Station names/positions and the track line on the map come from `public/line.json`,
+  built from the public static GTFS zip (no API key) by `uv run scripts/build-line.py`.
+  Re-run it by hand if Metrolinx adds or renames a Barrie line station.
 
 ## Documentation
 

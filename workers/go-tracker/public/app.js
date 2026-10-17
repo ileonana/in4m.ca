@@ -1,12 +1,38 @@
 const map = L.map("map").setView([44.0, -79.5], 9); // Union <-> Allandale Waterfront corridor
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
   maxZoom: 18,
 }).addTo(map);
 
 const markers = new Map(); // tripId -> L.Marker
+const stationNames = new Map(); // stop code ("UN") -> name ("Union Station")
 const statusEl = document.getElementById("status");
+
+// Feed values end up in popup HTML, so escape them.
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+function stationName(code) {
+  return stationNames.get(code) ?? code;
+}
+
+// Track and stations from public/line.json (built by scripts/build-line.py).
+async function drawLine() {
+  try {
+    const line = await (await fetch("/line.json")).json();
+    L.polyline(line.shape, { color: "#003767", weight: 4, opacity: 0.6 }).addTo(map);
+    for (const s of line.stations) {
+      stationNames.set(s.code, s.name);
+      L.circleMarker([s.lat, s.lon], {
+        radius: 5, color: "#003767", weight: 2, fillColor: "#fff", fillOpacity: 1,
+      }).addTo(map).bindTooltip(esc(s.name));
+    }
+  } catch {
+    // Map still works without it; popups fall back to stop codes.
+  }
+}
 
 function trainIcon(bearing) {
   const rotation = typeof bearing === "number" ? bearing : 0;
@@ -24,18 +50,25 @@ function minutesUntil(iso) {
   return Math.round(diffMs / 60000);
 }
 
+function formatDelay(seconds) {
+  const mins = Math.round(seconds / 60);
+  if (mins > 0) return ` (${mins} min late)`;
+  if (mins < 0) return ` (${-mins} min early)`;
+  return "";
+}
+
 function formatEta(stop, label) {
   if (!stop) return "";
   const mins = minutesUntil(stop.eta);
-  const delay = stop.delaySeconds ? ` (+${Math.round(stop.delaySeconds / 60)}m delay)` : "";
   const when = mins === null ? "unknown" : mins <= 0 ? "arriving" : `${mins} min`;
-  return `<b>${label}: ${stop.stopId}</b>${when}${delay}`;
+  return `<b>${label}: ${esc(stationName(stop.stopId))}</b>${when}${formatDelay(stop.delaySeconds)}`;
 }
 
 function popupHtml(train) {
+  const heading = train.finalStop ? ` &rarr; ${esc(stationName(train.finalStop.stopId))}` : "";
   return `
     <div class="popup-eta">
-      <strong>${train.label ?? train.tripId}</strong>
+      <strong>${esc(train.label ?? train.tripId)}${heading}</strong>
       ${formatEta(train.nextStop, "Next stop")}
       ${formatEta(train.finalStop, "Terminus")}
     </div>
@@ -78,13 +111,16 @@ async function refresh() {
     }
   }
 
-  const trainCount = data.trains?.length ?? 0;
+  const trainCount = seen.size;
   const generated = data.generated ? new Date(data.generated) : null;
   const ageMin = generated ? Math.round((Date.now() - generated.getTime()) / 60000) : null;
-  statusEl.textContent = generated
-    ? `${trainCount} train${trainCount === 1 ? "" : "s"} on the Barrie line - updated ${ageMin}m ago`
-    : "No data yet - check back shortly";
+  statusEl.textContent = !generated
+    ? "No data yet - check back shortly"
+    : trainCount === 0
+      ? `No Barrie line trains running right now - checked ${ageMin}m ago`
+      : `${trainCount} train${trainCount === 1 ? "" : "s"} on the Barrie line - updated ${ageMin}m ago`;
 }
 
-refresh();
-setInterval(refresh, 20000);
+// Draw stations first so the first popups already have names.
+drawLine().then(refresh);
+setInterval(refresh, 30000); // snapshot only changes every 2 min
